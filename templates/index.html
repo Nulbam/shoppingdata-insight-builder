@@ -168,8 +168,8 @@
                             <button type="button" class="query-chip" data-query="전체 거래액 중 온라인몰과 온·오프라인 병행몰 총 비중은?">전체 채널 비중은?</button>
                             <button type="button" class="query-chip" data-query="온라인몰 점유율이 가장 높은 상위 5대 품목은?">온라인몰 1위 품목은?</button>
                             <button type="button" class="query-chip" data-query="온·오프라인 병행몰이 가장 우세한 품목은?">병행몰 강세 품목은?</button>
-                            <button type="button" class="query-chip" data-query="화장품 품목의 채널별 점유율과 거래 규모는?">화장품 채널 점유율은?</button>
-                            <button type="button" class="query-chip" data-query="의복 품목의 채널 구성과 거래액은?">의복 채널 구성은?</button>
+                            <button type="button" class="query-chip" data-query="화장품 품목의 기간별 채널 거래액 추이와 점유율 행태 변화는?">기간별 화장품 행태 추이</button>
+                            <button type="button" class="query-chip" data-query="기간별로 온라인몰 점유율이 가장 많이 늘어난 상품군 순위는?">기간별 온라인화 순위</button>
                         </div>
 
                         <!-- AI 질문 답변 말풍선 카드 -->
@@ -202,9 +202,9 @@
 
                     <!-- 수동 도구 실행 컨트롤러 -->
                     <div class="manual-tool-box">
-                        <h3 class="sub-title">🛠️ 12개 분석 도구 카탈로그 직접 선택</h3>
+                        <h3 class="sub-title">🛠️ 14대 분석 도구 카탈로그 직접 선택</h3>
                         <div class="tool-select-grid">
-                            <div class="form-group">
+                            <div class="form-group tool-full-width">
                                 <label for="toolSelect">분석 도구:</label>
                                 <select id="toolSelect" class="form-control">
                                     <option value="channel_share_by_category">1. 상품군별 채널 점유율 비교 (100% 누적 막대)</option>
@@ -219,20 +219,34 @@
                                     <option value="channel_basket_composition">10. 채널별 장바구니 바스켓 구성비 비교 (그룹 막대)</option>
                                     <option value="seasonal_channel_pattern">11. 특정 상품군 월별 계절성 패턴 (평균 선 차트)</option>
                                     <option value="single_category_deep_dive">12. 특정 상품군 360도 심층 대시보드 (종합 요약)</option>
+                                    <option value="period_category_channel_trend" selected>⭐ 13. [기간별x상품행태] 기간 범위별 상품군 채널 거래액 추이 & 점유율 변화 (복합 듀얼 차트)</option>
+                                    <option value="period_product_channel_behavior">⭐ 14. [기간별x상품행태] 전 상품군 기간별 채널 선호 행태 비교 & 순위 (수평 막대)</option>
                                 </select>
                             </div>
 
-                            <div class="form-group" id="periodParamGroup">
+                            <!-- 단일 시점 선택 그룹 -->
+                            <div class="form-group hidden" id="periodParamGroup">
                                 <label for="periodSelect">기준 시점:</label>
                                 <select id="periodSelect" class="form-control"></select>
                             </div>
 
-                            <div class="form-group hidden" id="categoryParamGroup">
+                            <!-- 기간 범위(시작/종료) 선택 그룹 -->
+                            <div class="form-group" id="rangePeriodParamGroup">
+                                <label>분석 기간 범위:</label>
+                                <div class="range-inputs-row">
+                                    <select id="startPeriodSelect" class="form-control" title="시작 시점"></select>
+                                    <span class="range-tilde">~</span>
+                                    <select id="endPeriodSelect" class="form-control" title="종료 시점"></select>
+                                </div>
+                            </div>
+
+                            <!-- 상품군 선택 그룹 -->
+                            <div class="form-group" id="categoryParamGroup">
                                 <label for="categorySelect">대상 상품군:</label>
                                 <select id="categorySelect" class="form-control"></select>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group action-form-group">
                                 <button id="runToolBtn" class="btn btn-success">
                                     <span>분석 실행 (/run)</span>
                                 </button>

@@ -655,8 +655,32 @@ body {
 
 .tool-select-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 14px;
+    align-items: flex-end;
+}
+
+.tool-full-width {
+    grid-column: 1 / -1;
+}
+
+.range-inputs-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.range-inputs-row select {
+    flex: 1;
+}
+
+.range-tilde {
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.action-form-group {
+    display: flex;
     align-items: flex-end;
 }
 

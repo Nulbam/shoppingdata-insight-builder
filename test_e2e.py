@@ -102,4 +102,41 @@ print("Folder inspect status:", folder_inspect_data["status"])
 print("Folder inspect file:", folder_inspect_data["file_info"]["file_name"])
 print("Detected categories:", folder_inspect_data["categories"]["total_count"])
 
-print("\n>>> ALL 7 END-TO-END PIPELINE STEPS (INCLUDING RAW FOLDER INSPECTION) PASSED SUCCESSFULLY! <<<")
+print("\n=== [E2E STEP 8] Period & Product Channel Behavior Analysis (Tool 13, Tool 14) ===")
+# 8-1. Tool 13 실행 테스트
+res_tool13 = client.post("/run", json={
+    "tool": "period_category_channel_trend",
+    "params": {
+        "category": "화장품",
+        "start_period": "2023.01",
+        "end_period": "2026.08"
+    }
+})
+assert res_tool13.status_code == 200, f"Tool 13 failed: {res_tool13.status_code}"
+t13_data = res_tool13.get_json()["result"]
+print("Tool 13 Title:", t13_data["tool_title"])
+print("Tool 13 Periods Analyzed:", t13_data["meta"]["periods_count"])
+print("Tool 13 Summary:", t13_data["summary"][:60], "...")
+
+# 8-2. Tool 14 실행 테스트
+res_tool14 = client.post("/run", json={
+    "tool": "period_product_channel_behavior",
+    "params": {
+        "start_period": "2020.01",
+        "end_period": "2026.08"
+    }
+})
+assert res_tool14.status_code == 200, f"Tool 14 failed: {res_tool14.status_code}"
+t14_data = res_tool14.get_json()["result"]
+print("Tool 14 Title:", t14_data["tool_title"])
+print("Tool 14 Total Categories:", t14_data["meta"]["total_categories"])
+print("Top Online Shift:", t14_data["meta"]["top_online_category"], f"+{t14_data['meta']['top_online_shift']}%p")
+
+# 8-3. AI 자연어 질문을 통한 기간별 행태 자동 라우팅 테스트
+res_ask_period = client.post("/ask", json={"query": "2020년부터 2026년까지 화장품의 기간별 채널 행태 변화는?"})
+assert res_ask_period.status_code == 200, f"Ask period failed: {res_ask_period.status_code}"
+ask_period_data = res_ask_period.get_json()
+print("Ask Period Mapped Tool:", ask_period_data["mapped_tool"])
+print("Ask Period Answer:", ask_period_data["answer"][:80], "...")
+
+print("\n>>> ALL 8 END-TO-END PIPELINE STEPS (INCLUDING PERIOD & PRODUCT BEHAVIOR) PASSED SUCCESSFULLY! <<<")

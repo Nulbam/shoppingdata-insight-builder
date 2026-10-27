@@ -51,7 +51,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const suggestionsContainer = document.getElementById("suggestionsContainer");
     const suggestionCards = document.getElementById("suggestionCards");
     const toolSelect = document.getElementById("toolSelect");
+    const periodParamGroup = document.getElementById("periodParamGroup");
     const periodSelect = document.getElementById("periodSelect");
+    const rangePeriodParamGroup = document.getElementById("rangePeriodParamGroup");
+    const startPeriodSelect = document.getElementById("startPeriodSelect");
+    const endPeriodSelect = document.getElementById("endPeriodSelect");
     const categorySelect = document.getElementById("categorySelect");
     const categoryParamGroup = document.getElementById("categoryParamGroup");
     const runToolBtn = document.getElementById("runToolBtn");
@@ -317,15 +321,42 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function populateSelectOptions(data) {
+        const periods = data.periods.all_list;
+        const rec = data.recommended_period;
+
+        // 1. 단일 기준 시점
         periodSelect.innerHTML = "";
-        data.periods.all_list.forEach(p => {
+        periods.forEach(p => {
             const opt = document.createElement("option");
             opt.value = p;
             opt.textContent = p;
-            if (p === data.recommended_period) opt.selected = true;
+            if (p === rec) opt.selected = true;
             periodSelect.appendChild(opt);
         });
 
+        // 2. 기간 범위 (시작 / 종료 시점)
+        startPeriodSelect.innerHTML = "";
+        endPeriodSelect.innerHTML = "";
+
+        // 시작 시점 기본값: 최근 24개월 전 또는 첫 번째 시점
+        const defaultStartIdx = periods.length >= 24 ? periods.length - 24 : 0;
+        const defaultStart = periods[defaultStartIdx];
+
+        periods.forEach((p, idx) => {
+            const optStart = document.createElement("option");
+            optStart.value = p;
+            optStart.textContent = p;
+            if (p === defaultStart) optStart.selected = true;
+            startPeriodSelect.appendChild(optStart);
+
+            const optEnd = document.createElement("option");
+            optEnd.value = p;
+            optEnd.textContent = p;
+            if (p === rec) optEnd.selected = true;
+            endPeriodSelect.appendChild(optEnd);
+        });
+
+        // 3. 상품군
         categorySelect.innerHTML = "";
         data.categories.analyzable_list.forEach(c => {
             const opt = document.createElement("option");
@@ -333,13 +364,34 @@ document.addEventListener("DOMContentLoaded", () => {
             opt.textContent = c;
             categorySelect.appendChild(opt);
         });
+
+        updateParamVisibility();
     }
 
-    toolSelect.addEventListener("change", () => {
+    function updateParamVisibility() {
         const val = toolSelect.value;
-        const needsCategory = ["category_channel_trend", "seasonal_channel_pattern", "single_category_deep_dive"].includes(val);
-        categoryParamGroup.classList.toggle("hidden", !needsCategory);
-    });
+        const rangeTools = [
+            "period_category_channel_trend",
+            "period_product_channel_behavior",
+            "channel_share_shift",
+            "growth_rate_by_channel"
+        ];
+        const categoryTools = [
+            "category_channel_trend",
+            "seasonal_channel_pattern",
+            "single_category_deep_dive",
+            "period_category_channel_trend"
+        ];
+
+        const isRange = rangeTools.includes(val);
+        const needsCategory = categoryTools.includes(val);
+
+        if (rangePeriodParamGroup) rangePeriodParamGroup.classList.toggle("hidden", !isRange);
+        if (periodParamGroup) periodParamGroup.classList.toggle("hidden", isRange);
+        if (categoryParamGroup) categoryParamGroup.classList.toggle("hidden", !needsCategory);
+    }
+
+    toolSelect.addEventListener("change", updateParamVisibility);
 
     // =========================================================================
     // 4. Step 3 신규: AI 자연어 데이터 질문하기 (POST /ask)
@@ -451,7 +503,9 @@ document.addEventListener("DOMContentLoaded", () => {
             channel_dominance_matrix: "거래 규모 vs 점유율 4사분면 산점도",
             channel_basket_composition: "채널별 장바구니 바스켓 구성비",
             seasonal_channel_pattern: "월별 채널 선호 계절성 패턴",
-            single_category_deep_dive: "특정 상품군 360도 심층 대시보드"
+            single_category_deep_dive: "특정 상품군 360도 심층 대시보드",
+            period_category_channel_trend: "기간 범위별 상품군 채널 추이 & 점유율 변화",
+            period_product_channel_behavior: "전 상품군 기간별 채널 선호 행태 비교 & 순위"
         };
 
         suggestions.forEach(s => {
@@ -485,6 +539,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const toolName = toolSelect.value;
         const params = {
             reference_period: periodSelect.value,
+            start_period: startPeriodSelect.value,
+            end_period: endPeriodSelect.value,
+            base_period: startPeriodSelect.value,
+            target_period: endPeriodSelect.value,
             exclude_aggregates: true
         };
 

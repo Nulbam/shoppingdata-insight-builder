@@ -1062,3 +1062,360 @@ def single_category_deep_dive(df, meta, category=None, reference_period=None, ex
         "chart_data": chart_data,
         "summary": f"'{category}' 상품군은 {res_share['reference_period']} 기준 전체 시장 {rank}위(점유율 {market_share_pct}%)이며, '{target_item['dominant_channel']}'이 지배적인 품목입니다."
     }
+
+# ==============================================================================
+# 도구 13: period_category_channel_trend (기간별 특정 상품군 채널 거래액 추이 및 점유율 행태 변화)
+# ==============================================================================
+def period_category_channel_trend(df, meta, category=None, start_period=None, end_period=None, exclude_aggregates=True):
+    start_time = time.time()
+    det = meta.get("detected_columns", {})
+    cat_col = det.get("category_col")
+    op_col = det.get("operation_col")
+    time_col = det.get("period_col")
+    val_col = det.get("volume_col")
+    unit = det.get("unit", "백만원")
+
+    working_df = df.copy()
+    initial_rows = len(working_df)
+
+    if exclude_aggregates:
+        agg_keywords = ["합계", "총계", "소계", "계", "전체"]
+        cat_mask = (
+            working_df[cat_col].astype(str).str.strip().isin(agg_keywords) |
+            working_df[cat_col].astype(str).str.contains(r"^합계|^총계|\(계\)", regex=True)
+        )
+        op_mask = working_df[op_col].astype(str).str.strip().isin(agg_keywords)
+        working_df = working_df[~(cat_mask | op_mask)]
+
+    excluded_rows = initial_rows - len(working_df)
+    working_df["_std_channel"] = working_df[op_col].apply(_normalize_channel_name)
+
+    all_periods = sorted([str(p).strip() for p in working_df[time_col].dropna().unique()])
+    if not all_periods:
+        raise ValueError("시점 데이터를 찾을 수 없습니다.")
+
+    # 기본 시작/종료 시점 설정
+    if not start_period or str(start_period) not in all_periods:
+        start_period = all_periods[-24] if len(all_periods) >= 24 else all_periods[0]
+    if not end_period or str(end_period) not in all_periods:
+        end_period = all_periods[-1]
+
+    s_idx = all_periods.index(str(start_period))
+    e_idx = all_periods.index(str(end_period))
+    if s_idx > e_idx:
+        start_period, end_period = end_period, start_period
+        s_idx, e_idx = e_idx, s_idx
+
+    selected_periods = all_periods[s_idx:e_idx + 1]
+
+    available_cats = working_df[cat_col].dropna().unique().tolist()
+    if not category or str(category).strip() not in [str(c).strip() for c in available_cats]:
+        top_cat = working_df.groupby(cat_col)[val_col].sum().idxmax()
+        category = str(top_cat)
+
+    cat_df = working_df[
+        (working_df[cat_col].astype(str).str.strip() == str(category).strip()) &
+        (working_df[time_col].astype(str).str.strip().isin(selected_periods))
+    ].copy()
+
+    pivot = cat_df.pivot_table(
+        index=time_col,
+        columns="_std_channel",
+        values=val_col,
+        aggfunc="sum",
+        fill_value=0.0
+    ).reindex(selected_periods).fillna(0.0).reset_index()
+
+    if "온라인몰" not in pivot.columns:
+        pivot["온라인몰"] = 0.0
+    if "온·오프라인 병행몰" not in pivot.columns:
+        pivot["온·오프라인 병행몰"] = 0.0
+
+    pivot["총거래액"] = pivot["온라인몰"] + pivot["온·오프라인 병행몰"]
+    pivot["온라인몰점유율"] = np.where(
+        pivot["총거래액"] > 0,
+        np.round((pivot["온라인몰"] / pivot["총거래액"]) * 100, 2),
+        0.0
+    )
+    pivot["병행몰점유율"] = np.where(
+        pivot["총거래액"] > 0,
+        np.round((pivot["온·오프라인 병행몰"] / pivot["총거래액"]) * 100, 2),
+        0.0
+    )
+
+    table_data = []
+    for _, row in pivot.iterrows():
+        table_data.append({
+            "period": str(row[time_col]),
+            "category": category,
+            "pure_online_volume": float(row["온라인몰"]),
+            "omnichannel_volume": float(row["온·오프라인 병행몰"]),
+            "total_volume": float(row["총거래액"]),
+            "pure_online_share_pct": float(row["온라인몰점유율"]),
+            "omnichannel_share_pct": float(row["병행몰점유율"])
+        })
+
+    first_row = table_data[0]
+    last_row = table_data[-1]
+
+    start_on = first_row["pure_online_volume"]
+    end_on = last_row["pure_online_volume"]
+    start_om = first_row["omnichannel_volume"]
+    end_om = last_row["omnichannel_volume"]
+
+    on_growth = round(((end_on - start_on) / start_on) * 100, 1) if start_on > 0 else 0.0
+    om_growth = round(((end_om - start_om) / start_om) * 100, 1) if start_om > 0 else 0.0
+    share_diff = round(last_row["pure_online_share_pct"] - first_row["pure_online_share_pct"], 2)
+
+    if share_diff >= 5.0:
+        behavior_text = "순수 온라인몰 중심 소비 행태가 뚜렷하게 강화되었습니다."
+    elif share_diff <= -5.0:
+        behavior_text = "온·오프라인 병행몰 선호 행태가 눈에 띄게 확대되었습니다."
+    elif last_row["pure_online_share_pct"] >= 70.0:
+        behavior_text = "온라인몰이 압도적 우위를 확고하게 유지하고 있습니다."
+    elif last_row["pure_online_share_pct"] <= 35.0:
+        behavior_text = "병행몰(오프라인 매장 연계) 위주의 소비 행태가 견고하게 유지되고 있습니다."
+    else:
+        behavior_text = "온라인몰과 병행몰 간의 점유율이 팽팽한 균형을 유지하고 있습니다."
+
+    periods_labels = [r["period"] for r in table_data]
+    online_vols = [r["pure_online_volume"] for r in table_data]
+    omni_vols = [r["omnichannel_volume"] for r in table_data]
+    online_shares = [r["pure_online_share_pct"] for r in table_data]
+
+    # Chart.js 복합 듀얼 축 차트 (Bar + Line)
+    chart_data = {
+        "type": "bar",
+        "data": {
+            "labels": periods_labels,
+            "datasets": [
+                {
+                    "type": "bar",
+                    "label": f"온라인몰 거래액 ({unit})",
+                    "data": online_vols,
+                    "backgroundColor": "rgba(54, 162, 235, 0.75)",
+                    "yAxisID": "y",
+                    "order": 2
+                },
+                {
+                    "type": "bar",
+                    "label": f"온·오프라인 병행몰 ({unit})",
+                    "data": omni_vols,
+                    "backgroundColor": "rgba(255, 99, 132, 0.75)",
+                    "yAxisID": "y",
+                    "order": 3
+                },
+                {
+                    "type": "line",
+                    "label": "온라인몰 점유율 (%)",
+                    "data": online_shares,
+                    "borderColor": "rgba(124, 58, 237, 1)",
+                    "backgroundColor": "rgba(124, 58, 237, 0.2)",
+                    "borderWidth": 3,
+                    "pointRadius": 3,
+                    "yAxisID": "y1",
+                    "order": 1
+                }
+            ]
+        },
+        "options": {
+            "responsive": True,
+            "interaction": {"mode": "index", "intersect": False},
+            "scales": {
+                "y": {
+                    "type": "linear",
+                    "display": True,
+                    "position": "left",
+                    "title": {"display": True, "text": f"거래액 ({unit})"}
+                },
+                "y1": {
+                    "type": "linear",
+                    "display": True,
+                    "position": "right",
+                    "min": 0,
+                    "max": 100,
+                    "title": {"display": True, "text": "온라인몰 점유율 (%)"},
+                    "grid": {"drawOnChartArea": False}
+                }
+            }
+        }
+    }
+
+    elapsed = round(time.time() - start_time, 4)
+    logger.info(f"[CALCULATE] period_category_channel_trend 완료 ({category}, {start_period}~{end_period}, {elapsed}s)")
+
+    return {
+        "tool_name": "period_category_channel_trend",
+        "tool_title": f"'{category}' 기간별 채널 거래액 추이 및 점유율 행태 변화",
+        "reference_period": f"{start_period} ~ {end_period}",
+        "unit": unit,
+        "meta": {
+            "category": category,
+            "start_period": start_period,
+            "end_period": end_period,
+            "periods_count": len(periods_labels),
+            "online_growth_pct": on_growth,
+            "omni_growth_pct": om_growth,
+            "share_shift_pctp": share_diff
+        },
+        "table_data": table_data,
+        "chart_data": chart_data,
+        "summary": f"{start_period}부터 {end_period}까지 '{category}'의 온라인몰 거래액은 {on_growth:+.1f}%, 병행몰은 {om_growth:+.1f}% 변동하였으며, 온라인몰 점유율은 {first_row['pure_online_share_pct']}%에서 {last_row['pure_online_share_pct']}%로 {share_diff:+.2f}%p 변화했습니다. {behavior_text}"
+    }
+
+# ==============================================================================
+# 도구 14: period_product_channel_behavior (기간 범위 내 전 상품군 채널 선호 행태 비교 및 순위)
+# ==============================================================================
+def period_product_channel_behavior(df, meta, start_period=None, end_period=None, exclude_aggregates=True):
+    start_time = time.time()
+    det = meta.get("detected_columns", {})
+    cat_col = det.get("category_col")
+    op_col = det.get("operation_col")
+    time_col = det.get("period_col")
+    val_col = det.get("volume_col")
+    unit = det.get("unit", "백만원")
+
+    working_df = df.copy()
+    if exclude_aggregates:
+        agg_keywords = ["합계", "총계", "소계", "계", "전체"]
+        cat_mask = (
+            working_df[cat_col].astype(str).str.strip().isin(agg_keywords) |
+            working_df[cat_col].astype(str).str.contains(r"^합계|^총계|\(계\)", regex=True)
+        )
+        op_mask = working_df[op_col].astype(str).str.strip().isin(agg_keywords)
+        working_df = working_df[~(cat_mask | op_mask)]
+
+    working_df["_std_channel"] = working_df[op_col].apply(_normalize_channel_name)
+
+    all_periods = sorted([str(p).strip() for p in working_df[time_col].dropna().unique()])
+    if len(all_periods) < 2:
+        raise ValueError("기간별 행태 비교를 위해서는 2개 이상의 시점이 필요합니다.")
+
+    if not start_period or str(start_period) not in all_periods:
+        start_period = all_periods[0]
+    if not end_period or str(end_period) not in all_periods:
+        end_period = all_periods[-1]
+
+    s_idx = all_periods.index(str(start_period))
+    e_idx = all_periods.index(str(end_period))
+    if s_idx > e_idx:
+        start_period, end_period = end_period, start_period
+
+    def _calc_period_shares(target_p):
+        sub_df = working_df[working_df[time_col].astype(str).str.strip() == str(target_p).strip()]
+        piv = sub_df.pivot_table(
+            index=cat_col,
+            columns="_std_channel",
+            values=val_col,
+            aggfunc="sum",
+            fill_value=0.0
+        ).reset_index()
+        if "온라인몰" not in piv.columns:
+            piv["온라인몰"] = 0.0
+        if "온·오프라인 병행몰" not in piv.columns:
+            piv["온·오프라인 병행몰"] = 0.0
+        piv["total"] = piv["온라인몰"] + piv["온·오프라인 병행몰"]
+        piv["online_share"] = np.where(piv["total"] > 0, np.round((piv["온라인몰"] / piv["total"]) * 100, 2), 0.0)
+        return piv.set_index(cat_col)
+
+    start_piv = _calc_period_shares(start_period)
+    end_piv = _calc_period_shares(end_period)
+
+    categories = sorted(list(set(start_piv.index).intersection(set(end_piv.index))))
+
+    table_data = []
+    for cat in categories:
+        s_row = start_piv.loc[cat]
+        e_row = end_piv.loc[cat]
+
+        s_share = float(s_row["online_share"])
+        e_share = float(e_row["online_share"])
+        shift = round(e_share - s_share, 2)
+
+        s_on_vol = float(s_row["온라인몰"])
+        e_on_vol = float(e_row["온라인몰"])
+        s_om_vol = float(s_row["온·오프라인 병행몰"])
+        e_om_vol = float(e_row["온·오프라인 병행몰"])
+
+        on_growth = round(((e_on_vol - s_on_vol) / s_on_vol) * 100, 1) if s_on_vol > 0 else 0.0
+        om_growth = round(((e_om_vol - s_om_vol) / s_om_vol) * 100, 1) if s_om_vol > 0 else 0.0
+
+        if shift >= 5.0:
+            behavior = "🚀 온라인화 가속형"
+        elif shift <= -5.0:
+            behavior = "🏬 병행몰 선호 침투형"
+        elif e_share >= 75.0:
+            behavior = "🔒 온라인 독점 정착형"
+        elif e_share <= 35.0:
+            behavior = "🏪 오프라인/병행몰 강세형"
+        else:
+            behavior = "⚖️ 채널 균형 경쟁형"
+
+        table_data.append({
+            "category": str(cat),
+            "start_share_pct": s_share,
+            "end_share_pct": e_share,
+            "share_shift_pctp": shift,
+            "online_growth_pct": on_growth,
+            "omni_growth_pct": om_growth,
+            "end_total_volume": float(e_row["total"]),
+            "behavior_type": behavior
+        })
+
+    table_data.sort(key=lambda x: x["share_shift_pctp"], reverse=True)
+
+    cats = [r["category"] for r in table_data]
+    shifts = [r["share_shift_pctp"] for r in table_data]
+    bar_colors = ["rgba(54, 162, 235, 0.8)" if s >= 0 else "rgba(255, 99, 132, 0.8)" for s in shifts]
+
+    chart_data = {
+        "type": "bar",
+        "data": {
+            "labels": cats,
+            "datasets": [
+                {
+                    "label": "온라인몰 점유율 변화폭 (%p)",
+                    "data": shifts,
+                    "backgroundColor": bar_colors,
+                    "borderColor": bar_colors,
+                    "borderWidth": 1
+                }
+            ]
+        },
+        "options": {
+            "indexAxis": "y",
+            "responsive": True,
+            "scales": {
+                "x": {
+                    "title": {"display": True, "text": "점유율 변화폭 (%p: 양수=온라인몰 확대, 음수=병행몰 확대)"}
+                }
+            }
+        }
+    }
+
+    top_online_cat = table_data[0]["category"]
+    top_online_shift = table_data[0]["share_shift_pctp"]
+    top_omni_cat = table_data[-1]["category"]
+    top_omni_shift = table_data[-1]["share_shift_pctp"]
+
+    elapsed = round(time.time() - start_time, 4)
+    logger.info(f"[CALCULATE] period_product_channel_behavior 완료 ({start_period}~{end_period}, {elapsed}s)")
+
+    return {
+        "tool_name": "period_product_channel_behavior",
+        "tool_title": f"전 상품군 기간별 채널 선호 행태 비교 및 순위 ({start_period} ~ {end_period})",
+        "reference_period": f"{start_period} ~ {end_period}",
+        "unit": "%p",
+        "meta": {
+            "start_period": start_period,
+            "end_period": end_period,
+            "total_categories": len(table_data),
+            "top_online_category": top_online_cat,
+            "top_online_shift": top_online_shift,
+            "top_omni_category": top_omni_cat,
+            "top_omni_shift": top_omni_shift
+        },
+        "table_data": table_data,
+        "chart_data": chart_data,
+        "summary": f"{start_period} 대비 {end_period} 동안 온라인몰 점유율이 가장 크게 확대된 상품군은 '{top_online_cat}'({top_online_shift:+.2f}%p)이며, 온·오프라인 병행몰 선호가 가장 크게 확대된 상품군은 '{top_omni_cat}'({top_omni_shift:+.2f}%p)입니다."
+    }

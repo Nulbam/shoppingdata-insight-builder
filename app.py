@@ -677,7 +677,8 @@ JSON 출력 규격:
             "channel_share_by_category", "pure_online_dominance_top_n", "omnichannel_dominance_top_n",
             "macro_channel_ratio", "category_channel_trend", "channel_share_shift",
             "total_volume_ranking", "growth_rate_by_channel", "channel_dominance_matrix",
-            "channel_basket_composition", "seasonal_channel_pattern", "single_category_deep_dive"
+            "channel_basket_composition", "seasonal_channel_pattern", "single_category_deep_dive",
+            "period_category_channel_trend", "period_product_channel_behavior"
         ]
         validated_suggestions = [s for s in suggestions if s.get("tool") in valid_tool_names]
 
@@ -788,7 +789,7 @@ def ask_question():
     mapping_prompt = f"""
 당신은 사용자의 질문 의도를 분석하여 정확한 이커머스 채널 분석 도구와 파라미터로 연결하는 라우팅 엔진입니다.
 
-[사용 가능한 12개 도구 목록]
+[사용 가능한 14개 도구 목록]
 - channel_share_by_category : 특정 시점의 전체 상품군별 온라인몰 vs 온·오프라인 병행몰 점유율 비교
 - pure_online_dominance_top_n : 온라인몰 점유율이 가장 높은 상위 N개 상품군 발굴 (파라미터: top_n)
 - omnichannel_dominance_top_n : 온·오프라인 병행몰 점유율이 가장 높은 상위 N개 상품군 발굴 (파라미터: top_n)
@@ -801,6 +802,8 @@ def ask_question():
 - channel_basket_composition : 온라인몰 vs 병행몰 장바구니 매출 구성비 비교
 - seasonal_channel_pattern : 특정 상품군의 월별 계절성 패턴 (파라미터: category)
 - single_category_deep_dive : 선택한 1개 특정 상품군의 거래 규모, 채널 점유율, 시장 순위 종합 심층 요약 (파라미터: category)
+- period_category_channel_trend : 특정 기간 범위(시작 시점~종료 시점) 동안 특정 상품군의 채널 거래액 추이 및 점유율 행태 변화 (파라미터: category, start_period, end_period)
+- period_product_channel_behavior : 지정 기간 범위 동안 전 상품군별 온라인몰 점유율 변화폭 및 채널 선호 행태 비교 랭킹 (파라미터: start_period, end_period)
 
 [데이터셋 정보]
 - 상품군 목록: {', '.join(cats)}
@@ -813,10 +816,12 @@ def ask_question():
 [출력 규칙]
 반드시 아래 JSON 형식으로만 응답하십시오.
 {{
-  "tool": "선택한 도구 영문명 (12개 중 1개)",
+  "tool": "선택한 도구 영문명 (14개 중 1개)",
   "params": {{
     "reference_period": "{rec_period}",
     "category": "질문에 특정 품목이 언급되었다면 위 상품군 목록 중 가장 일치하는 것",
+    "start_period": "{periods[0]}",
+    "end_period": "{rec_period}",
     "top_n": 5
   }},
   "thought": "이 도구를 선택한 이유 요약 (1문장)"
@@ -845,7 +850,8 @@ def ask_question():
                 "channel_share_by_category", "pure_online_dominance_top_n", "omnichannel_dominance_top_n",
                 "macro_channel_ratio", "category_channel_trend", "channel_share_shift",
                 "total_volume_ranking", "growth_rate_by_channel", "channel_dominance_matrix",
-                "channel_basket_composition", "seasonal_channel_pattern", "single_category_deep_dive"
+                "channel_basket_composition", "seasonal_channel_pattern", "single_category_deep_dive",
+                "period_category_channel_trend", "period_product_channel_behavior"
             ]:
                 selected_tool = parsed_json["tool"]
                 parsed_params = parsed_json.get("params", {})
@@ -901,6 +907,20 @@ def ask_question():
     elif selected_tool == "single_category_deep_dive":
         cat_name = parsed_params.get("category", "")
         answer_text = f"**질문 답변:** {calc_result['summary']}"
+    elif selected_tool == "period_category_channel_trend":
+        m = calc_result.get("meta", {})
+        cat = m.get("category", "")
+        on_g = m.get("online_growth_pct", 0)
+        om_g = m.get("omni_growth_pct", 0)
+        shift = m.get("share_shift_pctp", 0)
+        answer_text = f"**질문 답변:** {calc_result['reference_period']} 동안 **'{cat}'** 상품군은 온라인몰 거래액 {on_g:+}%, 온·오프라인 병행몰 {om_g:+}% 성장률을 기록했으며, 온라인몰 점유율은 **{shift:+} %p** 변화했습니다. {calc_result['summary']}"
+    elif selected_tool == "period_product_channel_behavior":
+        m = calc_result.get("meta", {})
+        top_on = m.get("top_online_category", "")
+        top_on_s = m.get("top_online_shift", 0)
+        top_om = m.get("top_omni_category", "")
+        top_om_s = m.get("top_omni_shift", 0)
+        answer_text = f"**질문 답변:** {calc_result['reference_period']} 동안 온라인몰 점유율이 가장 크게 증가한 품목은 **'{top_on}'(+{top_on_s}%p)**이며, 병행몰 선호가 가장 크게 확대된 품목은 **'{top_om}'({top_om_s}%p)**입니다."
 
     logger.info(f"[CALCULATE] /ask 실행 완료: {selected_tool} 결과 도출")
 
