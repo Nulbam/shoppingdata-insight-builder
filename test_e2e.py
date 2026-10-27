@@ -64,4 +64,13 @@ print("Report Preview:\n" + "="*50)
 print(explain_data["report_markdown"][:600])
 print("="*50)
 
-print("\n>>> ALL 5 END-TO-END PIPELINE STEPS PASSED SUCCESSFULLY! <<<")
+print("\n=== [E2E STEP 6] AI Natural Language Data Query (/ask) ===")
+res_ask = client.post("/ask", json={"query": "온라인몰 점유율이 가장 높은 품목은?"})
+assert res_ask.status_code == 200, f"Ask failed: {res_ask.status_code}"
+ask_data = res_ask.get_json()
+print("Ask Status:", ask_data["status"])
+print("Mapped Tool:", ask_data["mapped_tool"])
+print("Answer:", ask_data["answer"])
+print("Result rows:", len(ask_data["result"]["table_data"]))
+
+print("\n>>> ALL 6 END-TO-END PIPELINE STEPS (INCLUDING AI Q&A) PASSED SUCCESSFULLY! <<<")

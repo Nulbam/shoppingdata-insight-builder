@@ -284,7 +284,6 @@ def _get_fallback_suggestions(meta):
     return suggestions
 
 def _generate_fallback_explain_report(mode, result, meta):
-    """Gemini API 키 미설정 또는 호출 오류 시 Pandas 확정 수치를 인용한 기본 리포트"""
     ref_period = result.get("reference_period", "")
     unit = result.get("unit", "백만원")
     t_data = result.get("table_data", [])
@@ -294,13 +293,9 @@ def _generate_fallback_explain_report(mode, result, meta):
 
 소비자들은 일반적으로 생필품이나 공산품은 쿠팡 등 **순수 온라인몰**에서 더 많이 구매하고, 백화점 브랜드 의류나 신선도가 중요한 식품은 **온·오프라인 병행몰**을 많이 이용하는 경향이 있습니다.
 
-- 온라인몰 예상 우세 품목: 컴퓨터, 가전, 서적 등 규격화된 상품
-- 병행몰 예상 우세 품목: 명품, 백화점 패션, 농축수산물 등
-
 *(주의: 위 내용은 실제 수치 집계 없이 작성된 추정이므로 비즈니스 의사결정에 그대로 사용할 수 없습니다.)*
 """
 
-    # 모드 B (정식 분석가 모드)
     online_strong = []
     omni_strong = []
     key_numbers_lines = []
@@ -617,17 +612,168 @@ def run_tool():
             "message": f"분석 도구 '{tool_name}' 실행 중 오류가 발생했습니다: {str(e)}"
         }), 500
 
+@app.route("/ask", methods=["POST"])
+def ask_question():
+    """
+    신규 추가: 사용자의 자연어 데이터 질문 처리 (/ask)
+    1. 사용자의 자연어 질문을 받아 Gemini 3.5 Flash Lite가 질문의 의도에 가장 적합한 도구(12개 중 1개)와 파라미터를 JSON으로 파싱.
+    2. 파싱된 도구를 Pandas로 즉각 실행하여 확정 수치 테이블과 Chart.js 시각화 데이터를 생성.
+    3. 계산된 팩트를 바탕으로 사용자 질문에 대한 명쾌한 자연어 답변 요약을 생성하여 반환.
+    """
+    meta = CURRENT_DATASET.get("metadata")
+    raw_df = CURRENT_DATASET.get("raw_df")
+
+    if not meta or raw_df is None:
+        logger.error("[ERROR] 질문을 처리할 데이터셋이 없습니다.")
+        return jsonify({"status": "error", "message": "먼저 CSV 파일을 업로드하여 진단을 완료해주세요."}), 400
+
+    req_data = request.get_json(silent=True) or {}
+    user_query = str(req_data.get("query", "")).strip()
+    if not user_query:
+        return jsonify({"status": "error", "message": "질문 내용을 입력해주세요."}), 400
+
+    cats = meta["categories"]["analyzable_list"]
+    periods = meta["periods"]["all_list"]
+    rec_period = meta["periods"]["recommended"]
+
+    logger.info(f"[REQUEST] POST /ask - 자연어 질문 수신: '{user_query}'")
+
+    # 1. Gemini를 통한 자연어 의도 -> 도구 및 파라미터 매핑 프롬프트
+    mapping_prompt = f"""
+당신은 사용자의 질문 의도를 분석하여 정확한 이커머스 채널 분석 도구와 파라미터로 연결하는 라우팅 엔진입니다.
+
+[사용 가능한 12개 도구 목록]
+- channel_share_by_category : 특정 시점의 전체 상품군별 온라인몰 vs 온·오프라인 병행몰 점유율 비교
+- pure_online_dominance_top_n : 온라인몰 점유율이 가장 높은 상위 N개 상품군 발굴 (파라미터: top_n)
+- omnichannel_dominance_top_n : 온·오프라인 병행몰 점유율이 가장 높은 상위 N개 상품군 발굴 (파라미터: top_n)
+- macro_channel_ratio : 전체 거래액 중 온라인몰과 병행몰의 거시적 총 비중 (도넛 차트)
+- category_channel_trend : 특정 상품군의 시계열(월별) 거래액 추이 (파라미터: category)
+- channel_share_shift : 두 시점 간 병행몰 점유율 변화폭 (%p) (파라미터: base_period, target_period)
+- total_volume_ranking : 전체 거래액 규모 상위 상품군 순위 (파라미터: top_n)
+- growth_rate_by_channel : 채널별 전년비/기간별 거래액 성장률 비교 (파라미터: base_period, target_period)
+- channel_dominance_matrix : 거래규모(X축) 대비 온라인몰 점유율(Y축) 4사분면 분류
+- channel_basket_composition : 온라인몰 vs 병행몰 장바구니 매출 구성비 비교
+- seasonal_channel_pattern : 특정 상품군의 월별 계절성 패턴 (파라미터: category)
+- single_category_deep_dive : 선택한 1개 특정 상품군의 거래 규모, 채널 점유율, 시장 순위 종합 심층 요약 (파라미터: category)
+
+[데이터셋 정보]
+- 상품군 목록: {', '.join(cats)}
+- 시점 목록: {', '.join(periods)}
+- 권장 시점: {rec_period}
+
+[사용자 질문]
+"{user_query}"
+
+[출력 규칙]
+반드시 아래 JSON 형식으로만 응답하십시오.
+{{
+  "tool": "선택한 도구 영문명 (12개 중 1개)",
+  "params": {{
+    "reference_period": "{rec_period}",
+    "category": "질문에 특정 품목이 언급되었다면 위 상품군 목록 중 가장 일치하는 것",
+    "top_n": 5
+  }},
+  "thought": "이 도구를 선택한 이유 요약 (1문장)"
+}}
+"""
+
+    selected_tool = "channel_share_by_category"
+    parsed_params = {"reference_period": rec_period, "exclude_aggregates": True}
+    thought = "기본 채널 점유율 비교 분석"
+
+    # API Key 확인 및 의도 파악
+    if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            resp = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=mapping_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1
+                )
+            )
+            raw_text = resp.text.strip()
+            parsed_json = json.loads(raw_text)
+            if parsed_json.get("tool") in [
+                "channel_share_by_category", "pure_online_dominance_top_n", "omnichannel_dominance_top_n",
+                "macro_channel_ratio", "category_channel_trend", "channel_share_shift",
+                "total_volume_ranking", "growth_rate_by_channel", "channel_dominance_matrix",
+                "channel_basket_composition", "seasonal_channel_pattern", "single_category_deep_dive"
+            ]:
+                selected_tool = parsed_json["tool"]
+                parsed_params = parsed_json.get("params", {})
+                parsed_params["exclude_aggregates"] = True
+                thought = parsed_json.get("thought", "")
+                logger.info(f"[AI] 자연어 질문 의도 매핑 완료: 도구={selected_tool}, 파라미터={parsed_params}")
+        except Exception as e:
+            logger.warning(f"[AI] 자연어 의도 파악 중 오류({str(e)}), 기본 키워드 룰 매핑 적용")
+            # 룰 기반 키워드 매칭
+            for c in cats:
+                if c in user_query:
+                    selected_tool = "single_category_deep_dive"
+                    parsed_params["category"] = c
+                    thought = f"'{c}' 상품군에 대한 질문으로 파악하여 종합 진단을 수행합니다."
+                    break
+    else:
+        # 키 미설정 시 기본 키워드 매칭
+        for c in cats:
+            if c in user_query:
+                selected_tool = "single_category_deep_dive"
+                parsed_params["category"] = c
+                thought = f"'{c}' 상품군 질문으로 매핑"
+                break
+        if "비중" in user_query or "전체" in user_query or "총" in user_query:
+            selected_tool = "macro_channel_ratio"
+
+    # 2. 파싱된 도구를 Pandas로 즉시 정밀 계산
+    tool_func = getattr(tools, selected_tool, tools.channel_share_by_category)
+    sig = inspect.signature(tool_func)
+    call_args = {}
+    if "df" in sig.parameters:
+        call_args["df"] = raw_df
+    if "meta" in sig.parameters:
+        call_args["meta"] = meta
+    for k, v in parsed_params.items():
+        if k in sig.parameters and k not in ["df", "meta"]:
+            call_args[k] = v
+
+    calc_result = tool_func(**call_args)
+    CURRENT_DATASET["last_result"] = calc_result
+
+    # 3. 계산 결과를 바탕으로 사용자 질문에 대한 직접적 답변 문장 생성
+    answer_text = f"**질문 답변:** {calc_result['summary']}"
+    if selected_tool == "macro_channel_ratio":
+        t0 = calc_result["table_data"][0]
+        t1 = calc_result["table_data"][1]
+        answer_text = f"**질문 답변:** {calc_result['reference_period']} 기준 전체 거래액 중 **온라인몰이 {t0['share_pct']}%**, **온·오프라인 병행몰이 {t1['share_pct']}%**를 차지하고 있습니다."
+    elif selected_tool in ["pure_online_dominance_top_n", "omnichannel_dominance_top_n"]:
+        top1 = calc_result["table_data"][0]
+        share_key = "pure_online_share_pct" if "pure_online" in selected_tool else "omnichannel_share_pct"
+        ch_name = "온라인몰" if "pure_online" in selected_tool else "온·오프라인 병행몰"
+        answer_text = f"**질문 답변:** {calc_result['reference_period']} 기준 {ch_name} 점유율 1위 품목은 **'{top1['category']}'**이며, 점유율은 **{top1[share_key]}%**입니다."
+    elif selected_tool == "single_category_deep_dive":
+        cat_name = parsed_params.get("category", "")
+        answer_text = f"**질문 답변:** {calc_result['summary']}"
+
+    logger.info(f"[CALCULATE] /ask 실행 완료: {selected_tool} 결과 도출")
+
+    return jsonify({
+        "status": "success",
+        "query": user_query,
+        "mapped_tool": selected_tool,
+        "tool_title": calc_result["tool_title"],
+        "thought": thought,
+        "answer": answer_text,
+        "result": calc_result
+    }), 200
+
 @app.route("/explain", methods=["POST"])
 def explain_insight():
-    """
-    Step 19: Gemini 인사이트 리포트 생성 (모드 A / 모드 B)
-    - 모드 A (비교용, 허술한 모드): Pandas 계산 결과 없이 단순 메타데이터만으로 AI 자의적 추정
-    - 모드 B (정식 분석가 모드): Pandas가 확정한 정밀 계산 수치 테이블만 인용하여 객관적 리포트 작성
-    """
+    """Step 19: Gemini 인사이트 리포트 생성 (모드 A / 모드 B)"""
     meta = CURRENT_DATASET.get("metadata")
     last_res = CURRENT_DATASET.get("last_result")
 
-    # 최근 실행 결과가 없다면 기본 도구 실행하여 채움
     if not last_res and CURRENT_DATASET.get("raw_df") is not None:
         last_res = tools.channel_share_by_category(CURRENT_DATASET["raw_df"], meta)
         CURRENT_DATASET["last_result"] = last_res
@@ -649,9 +795,7 @@ def explain_insight():
     tool_title = last_res.get("tool_title", "")
     table_data = last_res.get("table_data", [])
 
-    # 프롬프트 구성 (모드 A vs 모드 B)
     if mode == "A":
-        # 모드 A: 수치 데이터 미제공
         cats_str = ", ".join(meta["categories"]["analyzable_list"][:6])
         prompt = f"""
 당신은 일반 AI입니다.
@@ -664,7 +808,6 @@ def explain_insight():
 (주의: 별도의 집계 수치 표는 제공되지 않았으므로 당신의 일반 지식으로 추정하여 서술하십시오.)
 """
     else:
-        # 모드 B: Pandas 정밀 계산 테이블만 주입 및 엄격한 규칙 적용
         table_json_str = json.dumps(table_data, ensure_ascii=False, indent=2)
         prompt = f"""
 당신은 대한민국 이커머스 유통 채널(온라인몰 vs 온·오프라인 병행몰) 전문 수석 분석가입니다.
@@ -696,7 +839,6 @@ def explain_insight():
 
     start_ai_time = time.time()
 
-    # API 키 미설정 시 Fallback 리포트 반환
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
         logger.info(f"[AI] Gemini API Key 미설정: 규칙 기반 Fallback 리포트 반환 (모드 {mode})")
         report_md = _generate_fallback_explain_report(mode, last_res, meta)

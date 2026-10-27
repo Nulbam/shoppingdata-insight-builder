@@ -68,7 +68,6 @@
                     <h2>데이터셋 정밀 진단 결과 (11대 항목)</h2>
                 </div>
                 <div class="card-body">
-                    <!-- 요약 그리드 -->
                     <div class="meta-grid">
                         <div class="meta-card">
                             <span class="meta-label">파일명 및 크기</span>
@@ -96,13 +95,11 @@
                         </div>
                     </div>
 
-                    <!-- 경고 및 안내 박스 -->
                     <div class="warnings-box hidden" id="warningsBox">
                         <h4>⚠️ 데이터 정제 및 보정 안내</h4>
                         <ul id="warningsList"></ul>
                     </div>
 
-                    <!-- 미리보기 토글 -->
                     <div class="preview-accordion">
                         <button type="button" class="btn-toggle" id="togglePreviewBtn">
                             <span>정제된 데이터 미리보기 (상위 10행)</span>
@@ -120,32 +117,73 @@
                 </div>
             </section>
 
-            <!-- STEP 3: 분석 도구 선택 & Gemini 추천 -->
+            <!-- STEP 3: 분석 도구 선택 & Gemini 추천 & AI 자연어 데이터 질문하기 -->
             <section class="card section-suggest hidden" id="suggestSection">
                 <div class="card-header">
                     <span class="step-num">Step 3</span>
-                    <h2>분석 도구 선택 & Gemini 추천</h2>
+                    <h2>분석 도구 실행 & AI 자연어 질문</h2>
                 </div>
                 <div class="card-body">
+                    
+                    <!-- 신규 추가: AI 자연어 데이터 질문하기 박스 -->
+                    <div class="nl-query-box">
+                        <div class="nl-query-header">
+                            <h3 class="sub-title">💬 AI 자연어 데이터 질문하기</h3>
+                            <span class="nl-badge">Gemini 3.5 Flash Lite x Pandas</span>
+                        </div>
+                        <p class="guide-text">궁금한 채널 데이터를 한국어로 자유롭게 물어보세요. Gemini가 의도를 파악하고 Pandas가 수치를 정밀 계산합니다.</p>
+                        
+                        <div class="nl-input-row">
+                            <input type="text" id="nlQueryInput" class="form-control nl-input" placeholder="예: 화장품의 온라인몰 점유율은? / 전체 시장 중 온라인몰 비중은? / 온라인몰 점유율 1위 품목은?">
+                            <button id="nlQueryBtn" class="btn btn-purple">
+                                <span>질문하기</span>
+                            </button>
+                        </div>
+
+                        <!-- 추천 질문 칩 태그 -->
+                        <div class="nl-chips-row">
+                            <span class="chip-label">추천 질문:</span>
+                            <button type="button" class="query-chip" data-query="전체 거래액 중 온라인몰과 온·오프라인 병행몰 총 비중은?">전체 채널 비중은?</button>
+                            <button type="button" class="query-chip" data-query="온라인몰 점유율이 가장 높은 상위 5대 품목은?">온라인몰 1위 품목은?</button>
+                            <button type="button" class="query-chip" data-query="온·오프라인 병행몰이 가장 우세한 품목은?">병행몰 강세 품목은?</button>
+                            <button type="button" class="query-chip" data-query="화장품 품목의 채널별 점유율과 거래 규모는?">화장품 채널 점유율은?</button>
+                            <button type="button" class="query-chip" data-query="의복 품목의 채널 구성과 거래액은?">의복 채널 구성은?</button>
+                        </div>
+
+                        <!-- AI 질문 답변 말풍선 카드 -->
+                        <div id="nlAnswerBox" class="nl-answer-box hidden">
+                            <div class="nl-answer-header">
+                                <span class="nl-answer-bot">🤖 AI 데이터 답변</span>
+                                <span class="nl-mapped-badge" id="nlMappedBadge">-</span>
+                            </div>
+                            <div class="nl-answer-body" id="nlAnswerText"></div>
+                        </div>
+                    </div>
+
+                    <!-- 구분선 -->
+                    <div class="section-divider"></div>
+
+                    <!-- Gemini 원클릭 분석 추천 -->
                     <div class="suggest-intro">
-                        <p>진단된 데이터를 바탕으로 Gemini가 최적의 분석 도구를 제안하거나, 12개 도구 목록 중 직접 선택할 수 있습니다.</p>
+                        <div>
+                            <h3 class="sub-title" style="margin-bottom: 4px;">✨ Gemini AI 추천 분석</h3>
+                            <p class="guide-text" style="margin-bottom: 0;">데이터셋 구조를 종합 검토하여 가장 통찰력 있는 분석 3~5선을 제안합니다.</p>
+                        </div>
                         <button id="getSuggestBtn" class="btn btn-accent">
-                            <span>✨ Gemini AI 분석 추천 받기 (/suggest)</span>
+                            <span>분석 추천 받기 (/suggest)</span>
                         </button>
                     </div>
 
-                    <!-- Gemini 추천 카드 리스트 -->
                     <div class="suggestions-container hidden" id="suggestionsContainer">
-                        <h3 class="sub-title">🤖 Gemini 추천 분석 제안 (3~5선)</h3>
                         <div class="suggestion-cards" id="suggestionCards"></div>
                     </div>
 
                     <!-- 수동 도구 실행 컨트롤러 -->
                     <div class="manual-tool-box">
-                        <h3 class="sub-title">🛠️ 분석 도구 직접 선택</h3>
+                        <h3 class="sub-title">🛠️ 12개 분석 도구 카탈로그 직접 선택</h3>
                         <div class="tool-select-grid">
                             <div class="form-group">
-                                <label for="toolSelect">분석 도구 (12개 중 선택):</label>
+                                <label for="toolSelect">분석 도구:</label>
                                 <select id="toolSelect" class="form-control">
                                     <option value="channel_share_by_category">1. 상품군별 채널 점유율 비교 (100% 누적 막대)</option>
                                     <option value="pure_online_dominance_top_n">2. 온라인몰 우세 상위 N개 상품군 (수평 막대)</option>
@@ -194,12 +232,10 @@
                         <div class="result-badges" id="resultBadges"></div>
                     </div>
 
-                    <!-- 차트 영역 -->
                     <div class="chart-wrapper">
                         <canvas id="mainChart"></canvas>
                     </div>
 
-                    <!-- 확정 계산 수치 테이블 -->
                     <div class="table-section">
                         <h3 class="sub-title">📊 Pandas 확정 집계 테이블</h3>
                         <div class="table-responsive">
@@ -242,7 +278,6 @@
                         </button>
                     </div>
 
-                    <!-- 리포트 출력 영역 -->
                     <div class="report-container hidden" id="reportContainer">
                         <div class="report-header">
                             <span class="report-badge" id="reportModeBadge">모드 B 리포트</span>

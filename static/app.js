@@ -6,9 +6,6 @@
 document.addEventListener("DOMContentLoaded", () => {
     console.log("[PAGE] 페이지 초기 로딩 시작");
 
-    // =========================================================================
-    // 전역 상태 변수
-    // =========================================================================
     let currentFile = null;
     let inspectionMeta = null;
     let currentChart = null;
@@ -40,6 +37,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Step 3 요소
     const suggestSection = document.getElementById("suggestSection");
+    const nlQueryInput = document.getElementById("nlQueryInput");
+    const nlQueryBtn = document.getElementById("nlQueryBtn");
+    const nlAnswerBox = document.getElementById("nlAnswerBox");
+    const nlMappedBadge = document.getElementById("nlMappedBadge");
+    const nlAnswerText = document.getElementById("nlAnswerText");
+    const queryChips = document.querySelectorAll(".query-chip");
+
     const getSuggestBtn = document.getElementById("getSuggestBtn");
     const suggestionsContainer = document.getElementById("suggestionsContainer");
     const suggestionCards = document.getElementById("suggestionCards");
@@ -153,11 +157,8 @@ document.addEventListener("DOMContentLoaded", () => {
             inspectionMeta = data;
             renderInspectionResults(data);
 
-            // 단계별 섹션 활성화
             diagnosisSection.classList.remove("hidden");
             suggestSection.classList.remove("hidden");
-
-            // 시점 및 상품군 선택 셀렉터 채우기
             populateSelectOptions(data);
 
             console.log(`[INSPECT] CSV 구조 진단 완료: 상품군=${data.categories.total_count}개, 운영형태=${data.operation_types.analyzable_list.join(", ")}, 시점=${data.periods.total_count}개`);
@@ -180,7 +181,6 @@ document.addEventListener("DOMContentLoaded", () => {
         diagOps.textContent = data.operation_types.analyzable_list.join(" vs ");
         diagRecPeriod.textContent = data.recommended_period || "최근 시점";
 
-        // 경고 및 정제 안내
         warningsList.innerHTML = "";
         if (data.warnings && data.warnings.length > 0) {
             data.warnings.forEach(w => {
@@ -193,7 +193,6 @@ document.addEventListener("DOMContentLoaded", () => {
             warningsBox.classList.add("hidden");
         }
 
-        // 10행 미리보기 테이블 렌더링
         renderPreviewTable(data.preview_rows);
     }
 
@@ -223,14 +222,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 미리보기 접기/펼치기
     togglePreviewBtn.addEventListener("click", () => {
         const isHidden = previewContent.classList.toggle("hidden");
         document.getElementById("previewArrow").textContent = isHidden ? "▼" : "▲";
     });
 
     function populateSelectOptions(data) {
-        // 시점 옵션
         periodSelect.innerHTML = "";
         data.periods.all_list.forEach(p => {
             const opt = document.createElement("option");
@@ -240,7 +237,6 @@ document.addEventListener("DOMContentLoaded", () => {
             periodSelect.appendChild(opt);
         });
 
-        // 상품군 옵션
         categorySelect.innerHTML = "";
         data.categories.analyzable_list.forEach(c => {
             const opt = document.createElement("option");
@@ -250,7 +246,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 도구 선택에 따라 상품군 파라미터 보이기/숨기기
     toolSelect.addEventListener("change", () => {
         const val = toolSelect.value;
         const needsCategory = ["category_channel_trend", "seasonal_channel_pattern", "single_category_deep_dive"].includes(val);
@@ -258,7 +253,72 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // =========================================================================
-    // 4. Step 3: Gemini AI 분석 도구 제안 요청 (POST /suggest)
+    // 4. Step 3 신규: AI 자연어 데이터 질문하기 (POST /ask)
+    // =========================================================================
+    async function handleNaturalLanguageQuery(queryText) {
+        const q = (queryText || nlQueryInput.value || "").trim();
+        if (!q) {
+            alert("질문 내용을 입력해주세요.");
+            return;
+        }
+
+        nlQueryBtn.disabled = true;
+        nlQueryBtn.innerHTML = "<span>🤖 의도 분석 & 계산 중...</span>";
+        console.log(`[ASK] AI 자연어 질문 요청: "${q}"`);
+
+        try {
+            const res = await fetch("/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: q })
+            });
+
+            const data = await res.json();
+            if (!res.ok || data.status !== "success") {
+                throw new Error(data.message || "질문 처리 중 오류 발생");
+            }
+
+            console.log(`[ASK] AI 자연어 질문 응답 수신: 도구=${data.mapped_tool}, 답변 요약=${data.answer}`);
+
+            // 답변 박스 렌더링
+            nlMappedBadge.textContent = `실행 도구: ${data.tool_title}`;
+            nlAnswerText.innerHTML = window.marked ? window.marked.parse(data.answer) : data.answer;
+            nlAnswerBox.classList.remove("hidden");
+
+            // 계산 결과(차트 & 테이블) Step 4에 렌더링
+            if (data.result) {
+                renderResults(data.result);
+                resultsSection.classList.remove("hidden");
+                explainSection.classList.remove("hidden");
+            }
+
+        } catch (err) {
+            console.error(`[ERROR] AI 자연어 질문 실패: ${err.message}`);
+            alert(`질문 오류: ${err.message}`);
+        } finally {
+            nlQueryBtn.disabled = false;
+            nlQueryBtn.innerHTML = "<span>질문하기</span>";
+        }
+    }
+
+    nlQueryBtn.addEventListener("click", () => handleNaturalLanguageQuery());
+    nlQueryInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+            handleNaturalLanguageQuery();
+        }
+    });
+
+    // 추천 질문 칩 클릭 이벤트
+    queryChips.forEach(chip => {
+        chip.addEventListener("click", () => {
+            const query = chip.getAttribute("data-query");
+            nlQueryInput.value = query;
+            handleNaturalLanguageQuery(query);
+        });
+    });
+
+    // =========================================================================
+    // 5. Step 3: Gemini AI 분석 도구 제안 요청 (POST /suggest)
     // =========================================================================
     getSuggestBtn.addEventListener("click", async () => {
         getSuggestBtn.disabled = true;
@@ -282,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
             alert(`추천 오류: ${err.message}`);
         } finally {
             getSuggestBtn.disabled = false;
-            getSuggestBtn.innerHTML = "<span>✨ Gemini AI 분석 추천 다시 받기</span>";
+            getSuggestBtn.innerHTML = "<span>분석 추천 다시 받기 (/suggest)</span>";
         }
     });
 
@@ -290,26 +350,24 @@ document.addEventListener("DOMContentLoaded", () => {
         suggestionCards.innerHTML = "";
         if (!suggestions || suggestions.length === 0) return;
 
+        const toolTitles = {
+            channel_share_by_category: "상품군별 채널 점유율 비교 (100% 누적 막대)",
+            pure_online_dominance_top_n: "온라인몰 우세 상위 N개 상품군",
+            omnichannel_dominance_top_n: "온·오프라인 병행몰 우세 상위 N개 상품군",
+            macro_channel_ratio: "전체 거래액 채널 총 비중 (도넛 차트)",
+            category_channel_trend: "특정 상품군 채널별 시계열 추이",
+            channel_share_shift: "시점 간 병행몰 점유율 전이폭 (%p)",
+            total_volume_ranking: "전체 거래액 상위 상품군 순위",
+            growth_rate_by_channel: "채널별 거래액 성장률 비교",
+            channel_dominance_matrix: "거래 규모 vs 점유율 4사분면 산점도",
+            channel_basket_composition: "채널별 장바구니 바스켓 구성비",
+            seasonal_channel_pattern: "월별 채널 선호 계절성 패턴",
+            single_category_deep_dive: "특정 상품군 360도 심층 대시보드"
+        };
+
         suggestions.forEach(s => {
             const card = document.createElement("div");
             card.className = "suggestion-card";
-
-            // 도구명 매핑
-            const toolTitles = {
-                channel_share_by_category: "상품군별 채널 점유율 비교 (100% 누적 막대)",
-                pure_online_dominance_top_n: "온라인몰 우세 상위 N개 상품군",
-                omnichannel_dominance_top_n: "온·오프라인 병행몰 우세 상위 N개 상품군",
-                macro_channel_ratio: "전체 거래액 채널 총 비중 (도넛 차트)",
-                category_channel_trend: "특정 상품군 채널별 시계열 추이",
-                channel_share_shift: "시점 간 병행몰 점유율 전이폭 (%p)",
-                total_volume_ranking: "전체 거래액 상위 상품군 순위",
-                growth_rate_by_channel: "채널별 거래액 성장률 비교",
-                channel_dominance_matrix: "거래 규모 vs 점유율 4사분면 산점도",
-                channel_basket_composition: "채널별 장바구니 바스켓 구성비",
-                seasonal_channel_pattern: "월별 채널 선호 계절성 패턴",
-                single_category_deep_dive: "특정 상품군 360도 심층 대시보드"
-            };
-
             const title = toolTitles[s.tool] || s.tool;
 
             card.innerHTML = `
@@ -326,8 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </button>
             `;
 
-            const runBtn = card.querySelector(".btn-run-sugg");
-            runBtn.addEventListener("click", () => {
+            card.querySelector(".btn-run-sugg").addEventListener("click", () => {
                 executeAnalysis(s.tool, s.params || {});
             });
 
@@ -335,7 +392,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 수동 실행 버튼 이벤트
     runToolBtn.addEventListener("click", () => {
         const toolName = toolSelect.value;
         const params = {
@@ -351,10 +407,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // =========================================================================
-    // 5. Step 4: 분석 실행 및 Chart.js / 결과 테이블 렌더링 (POST /run)
+    // 6. Step 4: 분석 실행 및 Chart.js / 결과 테이블 렌더링 (POST /run)
     // =========================================================================
     async function executeAnalysis(toolName, params) {
-        console.log(`[RUN] 분석 실행 요청: 도구=${toolName}, 파라미터=${JSON.stringify(params)}`);
+        console.log(`[RUN] 분석 실행 요청: 도구=${toolName}, 기준시점=${params.reference_period || "기본"}`);
         runToolBtn.disabled = true;
         runToolBtn.innerHTML = "<span>연산 중...</span>";
 
@@ -373,10 +429,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const result = data.result;
             console.log(`[RUN] Pandas 계산 결과 수신 완료 (${result.tool_title})`);
 
-            // 화면 렌더링
             renderResults(result);
 
-            // 결과 섹션 및 리포트 섹션 열기
             resultsSection.classList.remove("hidden");
             explainSection.classList.remove("hidden");
             resultsSection.scrollIntoView({ behavior: "smooth" });
@@ -394,7 +448,6 @@ document.addEventListener("DOMContentLoaded", () => {
         resultToolTitle.textContent = result.tool_title;
         resultSummaryText.textContent = result.summary || "";
 
-        // 배지 렌더링
         resultBadges.innerHTML = `
             <span class="badge-tag">기준시점: ${result.reference_period}</span>
             <span class="badge-tag">단위: ${result.unit}</span>
@@ -402,25 +455,19 @@ document.addEventListener("DOMContentLoaded", () => {
             <span class="badge-tag">합계 행 제외 필터링 적용</span>
         `;
 
-        // 1) Chart.js 렌더링
         renderChart(result.chart_data);
-
-        // 2) Pandas 계산 수치 테이블 렌더링
         renderResultTable(result.table_data, result.unit);
     }
 
     function renderChart(chartConfig) {
         if (!chartConfig) return;
 
-        // 기존 차트 제거
         if (currentChart) {
             currentChart.destroy();
             currentChart = null;
         }
 
         const ctx = mainChartCanvas.getContext("2d");
-
-        // 기본 옵션 병합
         const options = chartConfig.options || {};
         options.responsive = true;
         options.maintainAspectRatio = false;
@@ -432,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         const itemCount = (chartConfig.data && chartConfig.data.labels) ? chartConfig.data.labels.length : 0;
-        console.log(`[CHART] Chart.js 렌더링 완료 (타입: ${chartConfig.type}, 항목 수: ${itemCount})`);
+        console.log(`[CHART] Chart.js 렌더링 완료 (유형: ${chartConfig.type}, 렌더링된 항목 수: ${itemCount})`);
     }
 
     function renderResultTable(tableData, unit) {
@@ -443,7 +490,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const cols = Object.keys(tableData[0]);
         const trHead = document.createElement("tr");
 
-        // 헤더 한글화 매핑
         const colNamesMap = {
             category: "상품군",
             pure_online_volume: `온라인몰 거래액 (${unit})`,
@@ -496,9 +542,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // 6. Step 5: Gemini 유통 인사이트 리포트 생성 (POST /explain)
+    // 7. Step 5: Gemini 유통 인사이트 리포트 생성 (POST /explain)
     // =========================================================================
-    // 모드 선택 라디오 인터랙션
     modeBCard.addEventListener("click", () => {
         modeBCard.classList.add("active");
         modeACard.classList.remove("active");
@@ -530,7 +575,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(data.message || "리포트 생성 실패");
             }
 
-            // 마크다운 파싱 렌더링
             const rawMd = data.report_markdown;
             const htmlContent = window.marked ? window.marked.parse(rawMd) : rawMd.replace(/\n/g, "<br>");
 
@@ -551,5 +595,5 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    console.log("[PAGE] 페이지 초기 로딩 완료 (모든 이벤트 리스너 등록됨)");
+    console.log("[PAGE] 페이지 초기 로딩 완료 (자연어 질문 & 8대 콘솔 로그 완비)");
 });
