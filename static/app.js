@@ -23,8 +23,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedFileName = document.getElementById("selectedFileName");
     const inspectBtn = document.getElementById("inspectBtn");
 
-    // Step 2 요소
+    // Step 2 요소 (분석 대상 상품 선택 및 진단 아코디언)
     const diagnosisSection = document.getElementById("diagnosisSection");
+    const categoryCountBadge = document.getElementById("categoryCountBadge");
+    const categoryPillsGrid = document.getElementById("categoryPillsGrid");
+    const toggleDiagMetaBtn = document.getElementById("toggleDiagMetaBtn");
+    const diagMetaContent = document.getElementById("diagMetaContent");
+    const diagMetaArrow = document.getElementById("diagMetaArrow");
+
     const diagFileName = document.getElementById("diagFileName");
     const diagEncoding = document.getElementById("diagEncoding");
     const diagSkippedRows = document.getElementById("diagSkippedRows");
@@ -33,8 +39,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const diagRecPeriod = document.getElementById("diagRecPeriod");
     const warningsBox = document.getElementById("warningsBox");
     const warningsList = document.getElementById("warningsList");
-    const togglePreviewBtn = document.getElementById("togglePreviewBtn");
-    const previewContent = document.getElementById("previewContent");
     const previewThead = document.getElementById("previewThead");
     const previewTbody = document.getElementById("previewTbody");
 
@@ -254,9 +258,42 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    const CATEGORY_ICONS = {
+        "화장품": "💄",
+        "가전·전자·통신기기": "📱",
+        "의복": "👗",
+        "음·식료품": "🍱",
+        "컴퓨터 및 주변기기": "💻",
+        "여행 및 교통서비스": "✈️",
+        "음식서비스": "🛵",
+        "생활용품": "🧴",
+        "스포츠·레저용품": "⚽",
+        "자동차 및 자동차용품": "🚗",
+        "가구": "🛋️",
+        "신발": "👟",
+        "가방": "👜",
+        "패션용품 및 액세서리": "💍",
+        "아동·유아용품": "🍼",
+        "애완용품": "🐶",
+        "서적": "📚",
+        "사무·문구": "✏️",
+        "농축수산물": "🍎",
+        "이쿠폰서비스": "🎟️",
+        "문화 및 레저서비스": "🎬",
+        "기타서비스": "🛎️",
+        "기타": "📦"
+    };
+
     function applyInspectionResults(data) {
         inspectionMeta = data;
         renderInspectionResults(data);
+
+        // Step 2 상단 타원 버튼 렌더링
+        if (categoryCountBadge) {
+            categoryCountBadge.textContent = `총 ${data.categories.total_count}개 상품군`;
+        }
+        const defaultCat = data.categories.analyzable_list[0] || "";
+        renderCategoryPills(data.categories.analyzable_list, defaultCat);
 
         diagnosisSection.classList.remove("hidden");
         suggestSection.classList.remove("hidden");
@@ -264,6 +301,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
         console.log(`[INSPECT] CSV 구조 진단 완료: 파일=${data.file_info.file_name}, 상품군=${data.categories.total_count}개, 운영형태=${data.operation_types.analyzable_list.join(", ")}, 시점=${data.periods.total_count}개`);
         diagnosisSection.scrollIntoView({ behavior: "smooth" });
+    }
+
+    function renderCategoryPills(categories, activeCat) {
+        if (!categoryPillsGrid) return;
+        categoryPillsGrid.innerHTML = "";
+
+        categories.forEach(cat => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "category-pill" + (cat === activeCat ? " active" : "");
+            btn.dataset.category = cat;
+
+            const icon = CATEGORY_ICONS[cat] || "🏷️";
+            btn.innerHTML = `<span class="pill-icon">${icon}</span><span class="pill-name">${cat}</span>`;
+
+            btn.addEventListener("click", () => {
+                selectAndAnalyzeCategory(cat);
+            });
+
+            categoryPillsGrid.appendChild(btn);
+        });
+    }
+
+    function selectAndAnalyzeCategory(categoryName) {
+        // 1. 타원 버튼 활성화 상태 갱신
+        const allPills = categoryPillsGrid.querySelectorAll(".category-pill");
+        allPills.forEach(p => p.classList.toggle("active", p.dataset.category === categoryName));
+
+        // 2. Step 3 드롭다운 동기화
+        if (categorySelect) {
+            categorySelect.value = categoryName;
+        }
+
+        // 3. 분석 도구 자동 선택: 기간별 상품군 추이(13번) 또는 상품군 대상 도구
+        let targetTool = toolSelect.value;
+        const catSupportedTools = [
+            "period_category_channel_trend",
+            "category_channel_trend",
+            "single_category_deep_dive",
+            "seasonal_channel_pattern"
+        ];
+
+        if (!catSupportedTools.includes(targetTool)) {
+            targetTool = "period_category_channel_trend";
+            toolSelect.value = targetTool;
+        }
+        updateParamVisibility();
+
+        const params = {
+            category: categoryName,
+            reference_period: periodSelect ? periodSelect.value : "",
+            start_period: startPeriodSelect ? startPeriodSelect.value : "",
+            end_period: endPeriodSelect ? endPeriodSelect.value : "",
+            base_period: startPeriodSelect ? startPeriodSelect.value : "",
+            target_period: endPeriodSelect ? endPeriodSelect.value : "",
+            exclude_aggregates: true
+        };
+
+        console.log(`[CATEGORY-PILL] 타원 버튼 클릭: '${categoryName}' -> '${targetTool}' 분석 즉시 실행`);
+        executeAnalysis(targetTool, params);
     }
 
     function renderInspectionResults(data) {
@@ -315,10 +412,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    togglePreviewBtn.addEventListener("click", () => {
-        const isHidden = previewContent.classList.toggle("hidden");
-        document.getElementById("previewArrow").textContent = isHidden ? "▼" : "▲";
-    });
+    if (toggleDiagMetaBtn && diagMetaContent) {
+        toggleDiagMetaBtn.addEventListener("click", () => {
+            const isHidden = diagMetaContent.classList.toggle("hidden");
+            if (diagMetaArrow) diagMetaArrow.textContent = isHidden ? "▼" : "▲";
+        });
+    }
 
     function populateSelectOptions(data) {
         const periods = data.periods.all_list;

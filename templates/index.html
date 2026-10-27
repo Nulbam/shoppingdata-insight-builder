@@ -83,52 +83,65 @@
                 </div>
             </section>
 
-            <!-- STEP 2: 데이터셋 진단 결과 카드 (기본 숨김) -->
+            <!-- STEP 2: 분석 대상 상품 선택 (타원 버튼식 품목 선택) -->
             <section class="card section-diagnosis hidden" id="diagnosisSection">
                 <div class="card-header">
-                    <span class="step-num">Step 2</span>
-                    <h2>데이터셋 정밀 진단 결과 (11대 항목)</h2>
+                    <div>
+                        <span class="step-num">Step 2</span>
+                        <h2>분석 대상 상품 선택</h2>
+                    </div>
+                    <span class="category-pill-count" id="categoryCountBadge">총 0개 상품군</span>
                 </div>
                 <div class="card-body">
-                    <div class="meta-grid">
-                        <div class="meta-card">
-                            <span class="meta-label">파일명 및 크기</span>
-                            <span class="meta-val" id="diagFileName">-</span>
-                        </div>
-                        <div class="meta-card">
-                            <span class="meta-label">감지된 인코딩</span>
-                            <span class="meta-val" id="diagEncoding">-</span>
-                        </div>
-                        <div class="meta-card">
-                            <span class="meta-label">건너뛴 상단 주석</span>
-                            <span class="meta-val" id="diagSkippedRows">-</span>
-                        </div>
-                        <div class="meta-card">
-                            <span class="meta-label">분석 가능 상품군 수</span>
-                            <span class="meta-val highlight" id="diagCatCount">-</span>
-                        </div>
-                        <div class="meta-card">
-                            <span class="meta-label">식별된 운영형태</span>
-                            <span class="meta-val" id="diagOps">-</span>
-                        </div>
-                        <div class="meta-card">
-                            <span class="meta-label">권장 분석 시점</span>
-                            <span class="meta-val highlight" id="diagRecPeriod">-</span>
-                        </div>
+                    <p class="guide-text">분석하고 싶은 상품군(품목)의 타원 버튼을 클릭하세요. 클릭 즉시 해당 상품의 채널별 거래액 추이와 점유율 행태 분석이 자동으로 실행됩니다.</p>
+
+                    <!-- 타원형 상품 버튼 목록 -->
+                    <div class="category-pills-grid" id="categoryPillsGrid"></div>
+
+                    <div class="category-action-hint">
+                        <span>💡 원하는 상품 타원 버튼을 누르면 아래 결과 영역(Step 4)으로 자동 이동하며 시각화 차트와 수치 데이터가 즉시 표출됩니다.</span>
                     </div>
 
-                    <div class="warnings-box hidden" id="warningsBox">
-                        <h4>⚠️ 데이터 정제 및 보정 안내</h4>
-                        <ul id="warningsList"></ul>
-                    </div>
-
-                    <div class="preview-accordion">
-                        <button type="button" class="btn-toggle" id="togglePreviewBtn">
-                            <span>정제된 데이터 미리보기 (상위 10행)</span>
-                            <span id="previewArrow">▼</span>
+                    <!-- 세부 진단 메타데이터 (기본 숨김 아코디언) -->
+                    <div class="meta-diag-accordion">
+                        <button type="button" class="btn-toggle" id="toggleDiagMetaBtn">
+                            <span>⚙️ 데이터셋 상세 진단 정보 보기 (인코딩/결측치/미리보기)</span>
+                            <span id="diagMetaArrow">▼</span>
                         </button>
-                        <div class="preview-content hidden" id="previewContent">
-                            <div class="table-responsive">
+                        <div class="diag-meta-content hidden" id="diagMetaContent">
+                            <div class="meta-grid" style="margin-top: 14px;">
+                                <div class="meta-card">
+                                    <span class="meta-label">파일명 및 크기</span>
+                                    <span class="meta-val" id="diagFileName">-</span>
+                                </div>
+                                <div class="meta-card">
+                                    <span class="meta-label">감지된 인코딩</span>
+                                    <span class="meta-val" id="diagEncoding">-</span>
+                                </div>
+                                <div class="meta-card">
+                                    <span class="meta-label">건너뛴 상단 주석</span>
+                                    <span class="meta-val" id="diagSkippedRows">-</span>
+                                </div>
+                                <div class="meta-card">
+                                    <span class="meta-label">분석 가능 상품군 수</span>
+                                    <span class="meta-val highlight" id="diagCatCount">-</span>
+                                </div>
+                                <div class="meta-card">
+                                    <span class="meta-label">식별된 운영형태</span>
+                                    <span class="meta-val" id="diagOps">-</span>
+                                </div>
+                                <div class="meta-card">
+                                    <span class="meta-label">권장 분석 시점</span>
+                                    <span class="meta-val highlight" id="diagRecPeriod">-</span>
+                                </div>
+                            </div>
+
+                            <div class="warnings-box hidden" id="warningsBox">
+                                <h4>⚠️ 데이터 정제 및 보정 안내</h4>
+                                <ul id="warningsList"></ul>
+                            </div>
+
+                            <div class="table-responsive" style="margin-top: 12px;">
                                 <table class="data-table" id="previewTable">
                                     <thead id="previewThead"></thead>
                                     <tbody id="previewTbody"></tbody>

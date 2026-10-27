@@ -527,6 +527,87 @@ body {
     color: var(--primary);
 }
 
+/* ==========================================================================
+   Step 2: 분석 대상 상품 타원 버튼 (Category Pills)
+   ========================================================================== */
+.category-pill-count {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--primary);
+    background-color: var(--primary-light);
+    padding: 5px 14px;
+    border-radius: 9999px;
+    border: 1px solid #bfdbfe;
+}
+
+.category-pills-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 16px 0 18px 0;
+}
+
+.category-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 9999px; /* 완전한 타원형(Pill) */
+    border: 1.5px solid #cbd5e1;
+    background-color: #ffffff;
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.category-pill:hover {
+    border-color: var(--primary);
+    background-color: var(--primary-light);
+    color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
+}
+
+.category-pill.active {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border-color: #1d4ed8;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    transform: translateY(-1px);
+}
+
+.category-pill .pill-icon {
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.category-pill .pill-name {
+    letter-spacing: -0.01em;
+}
+
+.category-action-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.86rem;
+    color: #475569;
+    background-color: #f1f5f9;
+    padding: 11px 16px;
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--primary);
+    margin-bottom: 8px;
+}
+
+.meta-diag-accordion {
+    border-top: 1px solid var(--border-color);
+    padding-top: 14px;
+    margin-top: 14px;
+}
+
 .warnings-box {
     background-color: var(--warning-bg);
     border: 1px solid var(--warning-border);
