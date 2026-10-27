@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Commerce Channel Insight Analyzer (온라인몰 vs 병행몰 분석기)</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Marked.js CDN (Gemini 마크다운 리포트 렌더링용) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 커스텀 스타일시트 (Vanilla CSS) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 1. 헤더 영역 -->
+        <header class="header">
+            <div class="header-content">
+                <div>
+                    <h1 class="logo">E-Commerce Channel Insight Analyzer</h1>
+                    <p class="subtitle">통계청(KOSIS) 데이터 기반 순수 온라인몰 vs 온·오프라인 병행몰 비교 분석기</p>
+                </div>
+                <div class="server-badge" id="serverBadge">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="serverModelText">서버 연결 중...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 2. 단계별 메인 워크플로우 -->
+        <main class="main-content">
+            
+            <!-- STEP 1: CSV 파일 업로드 -->
+            <section class="card section-upload">
+                <div class="card-header">
+                    <span class="step-num">Step 1</span>
+                    <h2>KOSIS 통계청 CSV 데이터 업로드</h2>
+                </div>
+                <div class="card-body">
+                    <p class="guide-text">통계청(KOSIS)에서 내려받은 '온라인쇼핑몰 운영형태별/상품군별 거래액' CSV 파일을 올려주세요.</p>
+                    
+                    <div class="upload-dropzone" id="dropzone">
+                        <input type="file" id="csvFileInput" accept=".csv" class="file-input">
+                        <div class="dropzone-inner">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p class="dropzone-text"><strong>클릭하여 CSV 파일 선택</strong> 또는 파일을 여기로 끌어다 놓으세요</p>
+                            <p class="dropzone-hint">지원 인코딩: UTF-8, UTF-8-SIG, CP949, EUC-KR 자동 감지 (최대 10MB)</p>
+                            <p id="selectedFileName" class="selected-file-name"></p>
+                        </div>
+                    </div>
+
+                    <div class="action-row">
+                        <button id="inspectBtn" class="btn btn-primary" disabled>
+                            <span>데이터 구조 자동 진단하기 (/inspect)</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 2: 데이터셋 진단 결과 카드 (기본 숨김) -->
+            <section class="card section-diagnosis hidden" id="diagnosisSection">
+                <div class="card-header">
+                    <span class="step-num">Step 2</span>
+                    <h2>데이터셋 정밀 진단 결과 (11대 항목)</h2>
+                </div>
+                <div class="card-body">
+                    <!-- 요약 그리드 -->
+                    <div class="meta-grid">
+                        <div class="meta-card">
+                            <span class="meta-label">파일명 및 크기</span>
+                            <span class="meta-val" id="diagFileName">-</span>
+                        </div>
+                        <div class="meta-card">
+                            <span class="meta-label">감지된 인코딩</span>
+                            <span class="meta-val" id="diagEncoding">-</span>
+                        </div>
+                        <div class="meta-card">
+                            <span class="meta-label">건너뛴 상단 주석</span>
+                            <span class="meta-val" id="diagSkippedRows">-</span>
+                        </div>
+                        <div class="meta-card">
+                            <span class="meta-label">분석 가능 상품군 수</span>
+                            <span class="meta-val highlight" id="diagCatCount">-</span>
+                        </div>
+                        <div class="meta-card">
+                            <span class="meta-label">식별된 운영형태</span>
+                            <span class="meta-val" id="diagOps">-</span>
+                        </div>
+                        <div class="meta-card">
+                            <span class="meta-label">권장 분석 시점</span>
+                            <span class="meta-val highlight" id="diagRecPeriod">-</span>
+                        </div>
+                    </div>
+
+                    <!-- 경고 및 안내 박스 -->
+                    <div class="warnings-box hidden" id="warningsBox">
+                        <h4>⚠️ 데이터 정제 및 보정 안내</h4>
+                        <ul id="warningsList"></ul>
+                    </div>
+
+                    <!-- 미리보기 토글 -->
+                    <div class="preview-accordion">
+                        <button type="button" class="btn-toggle" id="togglePreviewBtn">
+                            <span>정제된 데이터 미리보기 (상위 10행)</span>
+                            <span id="previewArrow">▼</span>
+                        </button>
+                        <div class="preview-content hidden" id="previewContent">
+                            <div class="table-responsive">
+                                <table class="data-table" id="previewTable">
+                                    <thead id="previewThead"></thead>
+                                    <tbody id="previewTbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 3: 분석 도구 선택 & Gemini 추천 -->
+            <section class="card section-suggest hidden" id="suggestSection">
+                <div class="card-header">
+                    <span class="step-num">Step 3</span>
+                    <h2>분석 도구 선택 & Gemini 추천</h2>
+                </div>
+                <div class="card-body">
+                    <div class="suggest-intro">
+                        <p>진단된 데이터를 바탕으로 Gemini가 최적의 분석 도구를 제안하거나, 12개 도구 목록 중 직접 선택할 수 있습니다.</p>
+                        <button id="getSuggestBtn" class="btn btn-accent">
+                            <span>✨ Gemini AI 분석 추천 받기 (/suggest)</span>
+                        </button>
+                    </div>
+
+                    <!-- Gemini 추천 카드 리스트 -->
+                    <div class="suggestions-container hidden" id="suggestionsContainer">
+                        <h3 class="sub-title">🤖 Gemini 추천 분석 제안 (3~5선)</h3>
+                        <div class="suggestion-cards" id="suggestionCards"></div>
+                    </div>
+
+                    <!-- 수동 도구 실행 컨트롤러 -->
+                    <div class="manual-tool-box">
+                        <h3 class="sub-title">🛠️ 분석 도구 직접 선택</h3>
+                        <div class="tool-select-grid">
+                            <div class="form-group">
+                                <label for="toolSelect">분석 도구 (12개 중 선택):</label>
+                                <select id="toolSelect" class="form-control">
+                                    <option value="channel_share_by_category">1. 상품군별 채널 점유율 비교 (100% 누적 막대)</option>
+                                    <option value="pure_online_dominance_top_n">2. 온라인몰 우세 상위 N개 상품군 (수평 막대)</option>
+                                    <option value="omnichannel_dominance_top_n">3. 온·오프라인 병행몰 우세 상위 N개 상품군 (수평 막대)</option>
+                                    <option value="macro_channel_ratio">4. 전체 거래액 채널 총 비중 (도넛 차트)</option>
+                                    <option value="category_channel_trend">5. 특정 상품군 채널별 시계열 거래액 추이 (다중 선 차트)</option>
+                                    <option value="channel_share_shift">6. 시점 간 병행몰 점유율 전이폭 %p (발산 막대)</option>
+                                    <option value="total_volume_ranking">7. 전체 거래액 상위 상품군 순위 및 채널 구성 (누적 막대)</option>
+                                    <option value="growth_rate_by_channel">8. 채널별 거래액 성장률 비교 (그룹 막대)</option>
+                                    <option value="channel_dominance_matrix">9. 거래 규모 vs 온라인몰 점유율 4사분면 (산점도)</option>
+                                    <option value="channel_basket_composition">10. 채널별 장바구니 바스켓 구성비 비교 (그룹 막대)</option>
+                                    <option value="seasonal_channel_pattern">11. 특정 상품군 월별 계절성 패턴 (평균 선 차트)</option>
+                                    <option value="single_category_deep_dive">12. 특정 상품군 360도 심층 대시보드 (종합 요약)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group" id="periodParamGroup">
+                                <label for="periodSelect">기준 시점:</label>
+                                <select id="periodSelect" class="form-control"></select>
+                            </div>
+
+                            <div class="form-group hidden" id="categoryParamGroup">
+                                <label for="categorySelect">대상 상품군:</label>
+                                <select id="categorySelect" class="form-control"></select>
+                            </div>
+
+                            <div class="form-group">
+                                <button id="runToolBtn" class="btn btn-success">
+                                    <span>분석 실행 (/run)</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 4: 분석 결과 대시보드 (차트 & 테이블) -->
+            <section class="card section-results hidden" id="resultsSection">
+                <div class="card-header">
+                    <span class="step-num">Step 4</span>
+                    <h2 id="resultToolTitle">분석 결과 및 Chart.js 시각화</h2>
+                </div>
+                <div class="card-body">
+                    <div class="result-summary-bar">
+                        <p id="resultSummaryText" class="result-summary-text"></p>
+                        <div class="result-badges" id="resultBadges"></div>
+                    </div>
+
+                    <!-- 차트 영역 -->
+                    <div class="chart-wrapper">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+
+                    <!-- 확정 계산 수치 테이블 -->
+                    <div class="table-section">
+                        <h3 class="sub-title">📊 Pandas 확정 집계 테이블</h3>
+                        <div class="table-responsive">
+                            <table class="data-table" id="resultDataTable">
+                                <thead id="resultThead"></thead>
+                                <tbody id="resultTbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 5: Gemini 인사이트 리포트 생성 -->
+            <section class="card section-explain hidden" id="explainSection">
+                <div class="card-header">
+                    <span class="step-num">Step 5</span>
+                    <h2>Gemini AI 채널 유통 인사이트 리포트 (/explain)</h2>
+                </div>
+                <div class="card-body">
+                    <div class="mode-selector">
+                        <p class="mode-guide">보고서 생성 모드를 선택하세요:</p>
+                        <div class="mode-radio-group">
+                            <label class="mode-card active" id="modeBCard">
+                                <input type="radio" name="explainMode" value="B" checked>
+                                <div class="mode-info">
+                                    <strong>모드 B: 정식 분석가 모드 (추천)</strong>
+                                    <span>Pandas가 계산한 확정 수치 테이블만 전달하여 오차 없는 객관적 유통 전략 리포트를 작성합니다.</span>
+                                </div>
+                            </label>
+                            <label class="mode-card" id="modeACard">
+                                <input type="radio" name="explainMode" value="A">
+                                <div class="mode-info">
+                                    <strong>모드 A: 비교용 허술한 모드</strong>
+                                    <span>계산 결과 없이 단순 메타데이터만으로 AI가 자의적 추정을 시도합니다. (환각 한계 체감용)</span>
+                                </div>
+                            </label>
+                        </div>
+                        <button id="generateReportBtn" class="btn btn-purple">
+                            <span>📄 Gemini 인사이트 리포트 생성하기</span>
+                        </button>
+                    </div>
+
+                    <!-- 리포트 출력 영역 -->
+                    <div class="report-container hidden" id="reportContainer">
+                        <div class="report-header">
+                            <span class="report-badge" id="reportModeBadge">모드 B 리포트</span>
+                            <span class="report-model" id="reportModelBadge">Gemini 3.5 Flash Lite</span>
+                        </div>
+                        <div class="markdown-body" id="reportMarkdownBody"></div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- 푸터 -->
+        <footer class="footer">
+            <p>E-Commerce Channel Insight Analyzer | Flask · Pandas · Vanilla JS · Chart.js · Gemini 3.5 Flash Lite</p>
+        </footer>
+    </div>
+
+    <!-- 프론트엔드 자바스크립트 -->
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

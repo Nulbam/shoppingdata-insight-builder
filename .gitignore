@@ -1,0 +1,22 @@
+# 환경변수 및 보안 키 (절대 Git에 커밋되지 않도록 차단)
+.env
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# Python 캐시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 업로드 및 테스트 데이터 파일 (폴더 구조는 유지하되 데이터 파일 제외)
+data/*.csv
+data/*.xlsx
+
+# OS 및 에디터 임시 파일
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
