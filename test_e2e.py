@@ -73,4 +73,19 @@ print("Mapped Tool:", ask_data["mapped_tool"])
 print("Answer:", ask_data["answer"])
 print("Result rows:", len(ask_data["result"]["table_data"]))
 
-print("\n>>> ALL 6 END-TO-END PIPELINE STEPS (INCLUDING AI Q&A) PASSED SUCCESSFULLY! <<<")
+print("\n=== [E2E STEP 7] Direct raw_data Folder File Inspection (/inspect-from-folder) ===")
+res_raw_list = client.get("/api/raw-files")
+assert res_raw_list.status_code == 200, f"Raw files list failed: {res_raw_list.status_code}"
+raw_list_data = res_raw_list.get_json()
+print("raw_data folder files count:", raw_list_data["count"])
+assert raw_list_data["count"] >= 1, "raw_data folder should contain at least 1 file"
+target_raw_file = raw_list_data["files"][0]["name"]
+
+res_folder_inspect = client.post("/inspect-from-folder", json={"file_name": target_raw_file})
+assert res_folder_inspect.status_code == 200, f"Folder inspect failed: {res_folder_inspect.status_code}"
+folder_inspect_data = res_folder_inspect.get_json()
+print("Folder inspect status:", folder_inspect_data["status"])
+print("Folder inspect file:", folder_inspect_data["file_info"]["file_name"])
+print("Detected categories:", folder_inspect_data["categories"]["total_count"])
+
+print("\n>>> ALL 7 END-TO-END PIPELINE STEPS (INCLUDING RAW FOLDER INSPECTION) PASSED SUCCESSFULLY! <<<")

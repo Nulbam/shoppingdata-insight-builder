@@ -44,6 +44,9 @@
 shoppingdata-insight-builder/
 ├── data/
 │   └── kosis_online_shopping_sample.csv   # 테스트용 KOSIS 샘플 CSV (CP949 인코딩)
+├── raw_data/                              # 사용자가 KOSIS 원본 CSV를 직접 넣는 전용 폴더
+│   ├── kosis_sample_raw.csv               # 기본 제공 원본 샘플 CSV
+│   └── 안내_여기에_CSV파일을_넣어주세요.txt
 ├── static/
 │   ├── app.js                             # Vanilla JS 프론트엔드 통신 & 차트 렌더링
 │   └── style.css                          # 모던 반응형 커스텀 CSS
@@ -53,7 +56,7 @@ shoppingdata-insight-builder/
 ├── .gitignore                             # API 키 및 가상환경 격리
 ├── app.py                                 # Flask 서버 및 Gemini / 라우팅 엔드포인트
 ├── requirements.txt                       # 최소 필수 의존성 목록
-├── test_e2e.py                            # 6단계 파이프라인 E2E 자동 테스트
+├── test_e2e.py                            # 7단계 파이프라인 E2E 자동 테스트
 └── tools.py                               # 12대 정밀 분석 도구 Pandas 연산 모듈
 ```
 

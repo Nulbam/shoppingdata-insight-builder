@@ -16,6 +16,11 @@ data/*.csv
 data/*.xlsx
 !data/kosis_online_shopping_sample.csv
 
+# raw_data 폴더 내 사용자 원본 데이터 보호 (기본 샘플 파일만 허용)
+raw_data/*.csv
+raw_data/*.xlsx
+!raw_data/kosis_sample_raw.csv
+
 # OS 및 에디터 임시 파일
 .DS_Store
 Thumbs.db

@@ -15,6 +15,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const serverModelText = document.getElementById("serverModelText");
 
     // Step 1 요소
+    const rawFileSelect = document.getElementById("rawFileSelect");
+    const refreshRawFilesBtn = document.getElementById("refreshRawFilesBtn");
+    const inspectRawFileBtn = document.getElementById("inspectRawFileBtn");
     const dropzone = document.getElementById("dropzone");
     const csvFileInput = document.getElementById("csvFileInput");
     const selectedFileName = document.getElementById("selectedFileName");
@@ -93,7 +96,89 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServerHealth();
 
     // =========================================================================
-    // 2. Step 1: 파일 드래그 앤 드롭 및 선택
+    // 2. raw_data 폴더 내 CSV 파일 목록 조회 (/api/raw-files)
+    // =========================================================================
+    async function loadRawFileList() {
+        try {
+            rawFileSelect.innerHTML = '<option value="">폴더 목록 조회 중...</option>';
+            const res = await fetch("/api/raw-files");
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+
+            rawFileSelect.innerHTML = "";
+            if (!data.files || data.files.length === 0) {
+                const opt = document.createElement("option");
+                opt.value = "";
+                opt.textContent = "⚠️ raw_data 폴더에 CSV 파일이 없습니다.";
+                rawFileSelect.appendChild(opt);
+                inspectRawFileBtn.disabled = true;
+                return;
+            }
+
+            data.files.forEach((f, idx) => {
+                const opt = document.createElement("option");
+                opt.value = f.name;
+                opt.textContent = `📄 ${f.name} (${f.size_formatted}, ${f.modified})`;
+                if (idx === 0) opt.selected = true;
+                rawFileSelect.appendChild(opt);
+            });
+
+            inspectRawFileBtn.disabled = false;
+            console.log(`[PAGE] raw_data 폴더 파일 ${data.files.length}개 로드 완료`);
+        } catch (err) {
+            console.error(`[ERROR] raw_data 목록 조회 실패: ${err.message}`);
+            rawFileSelect.innerHTML = '<option value="">목록 조회 실패</option>';
+            inspectRawFileBtn.disabled = true;
+        }
+    }
+    loadRawFileList();
+
+    if (refreshRawFilesBtn) {
+        refreshRawFilesBtn.addEventListener("click", () => {
+            console.log("[PAGE] raw_data 폴더 파일 새로고침 요청");
+            loadRawFileList();
+        });
+    }
+
+    if (inspectRawFileBtn) {
+        inspectRawFileBtn.addEventListener("click", async () => {
+            const selectedFile = rawFileSelect.value;
+            if (!selectedFile) {
+                alert("분석할 CSV 파일을 선택해주세요.");
+                return;
+            }
+
+            inspectRawFileBtn.disabled = true;
+            inspectRawFileBtn.innerHTML = "<span>데이터 진단 중...</span>";
+            console.log(`[INSPECT] raw_data 폴더 파일 직접 진단 요청 시작 (${selectedFile})`);
+
+            try {
+                const res = await fetch("/inspect-from-folder", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_name: selectedFile })
+                });
+
+                const data = await res.json();
+                if (!res.ok || data.status !== "success") {
+                    throw new Error(data.message || "파일 진단에 실패했습니다.");
+                }
+
+                applyInspectionResults(data);
+                console.log(`[INSPECT] raw_data 폴더 파일 진단 완료: ${selectedFile}`);
+
+            } catch (err) {
+                console.error(`[ERROR] raw_data 파일 진단 실패: ${err.message}`);
+                alert(`진단 오류: ${err.message}`);
+            } finally {
+                inspectRawFileBtn.disabled = false;
+                inspectRawFileBtn.innerHTML = "⚡ 이 파일로 바로 분석";
+            }
+        });
+    }
+
+    // =========================================================================
+    // 3. Step 1: 파일 드래그 앤 드롭 및 수동 업로드
     // =========================================================================
     dropzone.addEventListener("dragover", (e) => {
         e.preventDefault();
@@ -131,7 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // 3. Step 1 -> Step 2: 데이터셋 진단 요청 (POST /inspect)
+    // 4. Step 1 -> Step 2: 업로드 데이터셋 진단 요청 (POST /inspect)
     // =========================================================================
     inspectBtn.addEventListener("click", async () => {
         if (!currentFile) return;
@@ -154,24 +239,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(data.message || "CSV 진단에 실패했습니다.");
             }
 
-            inspectionMeta = data;
-            renderInspectionResults(data);
-
-            diagnosisSection.classList.remove("hidden");
-            suggestSection.classList.remove("hidden");
-            populateSelectOptions(data);
-
-            console.log(`[INSPECT] CSV 구조 진단 완료: 상품군=${data.categories.total_count}개, 운영형태=${data.operation_types.analyzable_list.join(", ")}, 시점=${data.periods.total_count}개`);
-            diagnosisSection.scrollIntoView({ behavior: "smooth" });
+            applyInspectionResults(data);
 
         } catch (err) {
             console.error(`[ERROR] CSV 구조 진단 실패: ${err.message}`);
             alert(`진단 오류: ${err.message}`);
         } finally {
             inspectBtn.disabled = false;
-            inspectBtn.innerHTML = "<span>데이터 구조 다시 진단하기 (/inspect)</span>";
+            inspectBtn.innerHTML = "<span>업로드한 파일 진단하기 (/inspect)</span>";
         }
     });
+
+    function applyInspectionResults(data) {
+        inspectionMeta = data;
+        renderInspectionResults(data);
+
+        diagnosisSection.classList.remove("hidden");
+        suggestSection.classList.remove("hidden");
+        populateSelectOptions(data);
+
+        console.log(`[INSPECT] CSV 구조 진단 완료: 파일=${data.file_info.file_name}, 상품군=${data.categories.total_count}개, 운영형태=${data.operation_types.analyzable_list.join(", ")}, 시점=${data.periods.total_count}개`);
+        diagnosisSection.scrollIntoView({ behavior: "smooth" });
+    }
 
     function renderInspectionResults(data) {
         diagFileName.textContent = `${data.file_info.file_name} (${data.file_info.file_size_formatted})`;

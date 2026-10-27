@@ -38,6 +38,11 @@ app.config["MAX_CONTENT_LENGTH"] = max_upload_mb * 1024 * 1024
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
+# 기본 디렉터리 및 raw_data 폴더 경로 설정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RAW_DATA_DIR = os.path.join(BASE_DIR, "raw_data")
+os.makedirs(RAW_DATA_DIR, exist_ok=True)
+
 # 메모리 기반 단일 데이터셋 보관소 (디스크 영구 저장 배제)
 CURRENT_DATASET = {
     "file_name": None,
@@ -73,29 +78,39 @@ def detect_encoding_and_header(file_bytes):
         raise ValueError("지원하는 인코딩(utf-8-sig, utf-8, cp949, euc-kr)으로 파일을 디코딩할 수 없습니다.")
 
     reader = csv.reader(io.StringIO(decoded_text))
-    header_row_idx = 0
     keywords = ["상품군", "운영형태", "시점", "판매매체", "카테고리", "거래액", "판매액", "구분"]
+    meta_prefixes = ["통계표명", "조회조건", "출처", "단위", "작성부서", "자료갱신", "주:"]
 
     best_match_idx = 0
-    max_matches = 0
+    max_score = -1
 
+    rows = []
     for idx, row in enumerate(reader):
-        if idx >= 25:
+        if idx >= 30:
             break
-        if not row:
-            continue
-        if len(row) < 2:
+        rows.append(row)
+
+    for idx, row in enumerate(rows):
+        if not row or len(row) < 2:
             continue
 
-        matches = sum(1 for kw in keywords if any(kw in cell for cell in row))
-        if matches > max_matches:
-            max_matches = matches
+        first_cell = str(row[0]).strip()
+        second_cell = str(row[1]).strip() if len(row) > 1 else ""
+
+        # KOSIS 상단 통계표 메타데이터 주석 행 건너뛰기
+        if any(first_cell.startswith(p) for p in meta_prefixes) or any(second_cell.startswith(p) for p in meta_prefixes):
+            continue
+
+        matches = sum(1 for kw in keywords if any(kw in str(cell) for cell in row))
+        col_count = len(row)
+        score = (matches * 10) + col_count
+
+        if matches >= 1 and score > max_score:
+            max_score = score
             best_match_idx = idx
-            if matches >= 2:
-                break
 
     header_row_idx = best_match_idx
-    logger.info(f"[CSV] 헤더 행 탐지 성공: 제 {header_row_idx + 1}행 (상단 건너뛴 줄 수: {header_row_idx}, 매칭 키워드 수: {max_matches})")
+    logger.info(f"[CSV] 헤더 행 탐지 성공: 제 {header_row_idx + 1}행 (상단 건너뛴 줄 수: {header_row_idx})")
 
     return decoded_text, used_encoding, header_row_idx
 
@@ -108,6 +123,16 @@ def analyze_kosis_dataset(df):
     - 11가지 진단 메타데이터 구성
     """
     warnings = []
+
+    # 0. KOSIS 하단 통계 주석 및 출처 행 선제적 필터링 (예: "주: ...", "출처: ...", "자료: ...")
+    note_prefixes = ("주:", "주 :", "출처:", "출처 :", "자료:", "※", "*", "참고:")
+    if len(df.columns) > 0:
+        first_col = df.columns[0]
+        note_mask = df[first_col].astype(str).str.strip().str.startswith(note_prefixes)
+        if note_mask.sum() > 0:
+            logger.info(f"[CLEAN] 하단 통계 주석/출처 {note_mask.sum()}개 행 제거")
+            df = df[~note_mask].copy()
+
     cols = list(df.columns)
 
     cat_col = None
@@ -115,24 +140,56 @@ def analyze_kosis_dataset(df):
     time_col = None
     val_col = None
 
+    # 1. 상품군(카테고리) 열 탐색 (다중 계층 컬럼 대응: 예: 상품군별(1), 상품군별(2))
+    cat_candidates = [c for c in cols if any(k in str(c).strip() for k in ["상품군", "카테고리", "품목"])]
+    if cat_candidates:
+        if len(cat_candidates) == 1:
+            cat_col = cat_candidates[0]
+        else:
+            best_cat = cat_candidates[-1]
+            max_unique = -1
+            for cand in cat_candidates:
+                vals = df[cand].dropna().astype(str).str.strip()
+                non_agg = vals[~vals.isin(["합계", "총계", "소계", "계", "전체"])]
+                cnt = non_agg.nunique()
+                if cnt >= max_unique:
+                    max_unique = cnt
+                    best_cat = cand
+            cat_col = best_cat
+
+    # 2. 운영형태(채널) 열 탐색 (다중 계층 컬럼 대응: 예: 운영형태별(1), 운영형태별(2))
+    op_candidates = [c for c in cols if any(k in str(c).strip() for k in ["운영형태", "판매매체", "채널", "매체별"])]
+    if op_candidates:
+        if len(op_candidates) == 1:
+            op_col = op_candidates[0]
+        else:
+            best_op = op_candidates[-1]
+            for cand in op_candidates:
+                cand_vals = " ".join(df[cand].dropna().astype(str).unique())
+                if "온라인몰" in cand_vals or "병행" in cand_vals:
+                    best_op = cand
+                    break
+            op_col = best_op
+
+    # 3. 시점 및 거래액 열 탐색 (Long format에 이미 존재하는 경우)
     for c in cols:
         c_clean = str(c).strip()
-        if not cat_col and any(k in c_clean for k in ["상품군", "카테고리", "품목"]):
-            cat_col = c
-        elif not op_col and any(k in c_clean for k in ["운영형태", "판매매체", "채널", "매체별"]):
-            op_col = c
-        elif not time_col and any(k in c_clean for k in ["시점", "연월", "기간", "날짜"]):
+        if not time_col and any(k in c_clean for k in ["시점", "연월", "기간", "날짜"]):
             time_col = c
         elif not val_col and any(k in c_clean for k in ["거래액", "판매액", "데이터", "금액", "수치"]):
             val_col = c
 
+    # 4. Wide format (피벗 형태) 감지 및 Long format 변환
     if cat_col and op_col and (not time_col or not val_col):
         id_vars = [cat_col, op_col]
         potential_time_cols = [c for c in cols if c not in id_vars]
+        # 4자리 연도로 시작하는 시점 컬럼 탐색 (예: 2023.01, 2024.10 p), 2023 1/4 등)
         year_pattern_cols = [c for c in potential_time_cols if re.match(r'^\d{4}', str(c).strip())]
         if len(year_pattern_cols) >= 2:
             logger.info(f"[CLEAN] Wide format 감지: {len(year_pattern_cols)}개 시점 열을 Long format으로 정규화 변환합니다.")
             df = pd.melt(df, id_vars=id_vars, value_vars=year_pattern_cols, var_name="시점", value_name="거래액")
+            # 시점 문자열에서 잠정치 'p)', '(p)' 및 공백 제거하여 정규화 (예: '2024.10 p)' -> '2024.10')
+            df["시점"] = df["시점"].astype(str).str.strip().str.replace(r'[\s\(\)pP]', '', regex=True)
             time_col = "시점"
             val_col = "거래액"
             warnings.append("피벗(Wide) 형태로 나열된 시점 열들을 분석용 표준 목록 형태로 자동 변환하였습니다.")
@@ -154,12 +211,28 @@ def analyze_kosis_dataset(df):
     elif "원" in str(val_col) and "백만원" not in str(val_col):
         unit = "원"
 
-    raw_vals = df[val_col].astype(str).str.strip().str.replace(",", "", regex=False)
+    # 5. 수치 결측치 및 천단위 콤마, 잠정치 기호 정제
+    raw_vals = (
+        df[val_col].astype(str)
+        .str.strip()
+        .str.replace(",", "", regex=False)
+        .str.replace(r'[pP\)]', '', regex=True)
+        .str.strip()
+    )
     missing_mask = raw_vals.isin(["-", "", "...", "nan", "NaN", "None", "무응답", "null"])
     missing_count = int(missing_mask.sum())
 
     cleaned_series = pd.to_numeric(raw_vals.replace({"-": "0", "...": "0", "무응답": "0", "": "0"}), errors="coerce").fillna(0.0)
     df[val_col] = cleaned_series
+
+    # 6. 추가적인 빈 행 및 잔여 주석 행 필터링
+    clean_cat_mask = (
+        df[cat_col].isna() |
+        (df[cat_col].astype(str).str.strip() == "") |
+        df[cat_col].astype(str).str.strip().str.startswith(note_prefixes)
+    )
+    if clean_cat_mask.sum() > 0:
+        df = df[~clean_cat_mask].copy()
 
     if missing_count > 0:
         warnings.append(f"결측치 또는 하이픈('-')으로 표기된 데이터 {missing_count}건을 0으로 안전하게 보정하였습니다.")
@@ -354,9 +427,64 @@ def health():
         "message": "서버가 정상적으로 구동 중입니다."
     }), 200
 
+def _process_and_store_dataset(file_bytes, file_name, file_size):
+    """CSV 바이트 데이터를 정밀 디코딩 및 분석하여 CURRENT_DATASET에 캐싱하고 진단 메타데이터 반환"""
+    decoded_text, used_encoding, header_row_idx = detect_encoding_and_header(file_bytes)
+
+    df = pd.read_csv(
+        io.StringIO(decoded_text),
+        skiprows=header_row_idx,
+        dtype=str
+    )
+    df.columns = [str(col).strip().replace("\n", " ") for col in df.columns]
+
+    raw_df, clean_df, metadata = analyze_kosis_dataset(df)
+
+    CURRENT_DATASET["file_name"] = file_name
+    CURRENT_DATASET["file_size"] = file_size
+    CURRENT_DATASET["encoding"] = used_encoding
+    CURRENT_DATASET["skipped_rows"] = header_row_idx
+    CURRENT_DATASET["raw_df"] = raw_df
+    CURRENT_DATASET["clean_df"] = clean_df
+    CURRENT_DATASET["metadata"] = metadata
+    CURRENT_DATASET["last_result"] = None
+
+    logger.info(f"[CSV] 정밀 진단 완료: {file_name} (상품군: {metadata['categories']['total_count']}개, 운영형태: {len(metadata['operations']['analyzable_list'])}개, 시점: {metadata['periods']['total_count']}개)")
+
+    return {
+        "status": "success",
+        "file_info": {
+            "file_name": file_name,
+            "file_size_bytes": file_size,
+            "file_size_formatted": f"{round(file_size / 1024, 2)} KB"
+        },
+        "encoding_info": {
+            "detected_encoding": used_encoding,
+            "skipped_rows": header_row_idx
+        },
+        "dimension_info": {
+            "raw_rows": metadata["summary"]["total_raw_rows"],
+            "clean_rows": metadata["summary"]["total_clean_rows"],
+            "columns_count": len(raw_df.columns)
+        },
+        "detected_columns": metadata["detected_columns"],
+        "operation_types": metadata["operations"],
+        "categories": metadata["categories"],
+        "periods": metadata["periods"],
+        "recommended_period": metadata["periods"]["recommended"],
+        "missing_outliers_summary": {
+            "missing_count": metadata["summary"]["missing_count"],
+            "zero_count": metadata["summary"]["zero_count"],
+            "aggregate_rows_count": metadata["summary"]["aggregate_rows_count"]
+        },
+        "preview_rows": metadata["preview_rows"],
+        "warnings": metadata["warnings"],
+        "message": f"KOSIS 데이터 진단이 성공적으로 완료되었습니다 ({file_name})."
+    }
+
 @app.route("/inspect", methods=["POST"])
 def inspect_dataset():
-    """Step 13: 11가지 진단 메타데이터 전체 반환"""
+    """Step 13: 사용자가 웹에서 업로드한 CSV 파일 정밀 진단"""
     if "file" not in request.files:
         logger.error("[ERROR] 업로드 요청에 file 필드가 누락되었습니다.")
         return jsonify({"status": "error", "message": "업로드할 CSV 파일을 선택해주세요."}), 400
@@ -377,61 +505,79 @@ def inspect_dataset():
         return jsonify({"status": "error", "message": "업로드된 CSV 파일의 내용이 비어있습니다."}), 400
 
     try:
-        decoded_text, used_encoding, header_row_idx = detect_encoding_and_header(file_bytes)
-
-        df = pd.read_csv(
-            io.StringIO(decoded_text),
-            skiprows=header_row_idx,
-            dtype=str
-        )
-        df.columns = [str(col).strip().replace("\n", " ") for col in df.columns]
-
-        raw_df, clean_df, metadata = analyze_kosis_dataset(df)
-
-        CURRENT_DATASET["file_name"] = file.filename
-        CURRENT_DATASET["file_size"] = file_size
-        CURRENT_DATASET["encoding"] = used_encoding
-        CURRENT_DATASET["skipped_rows"] = header_row_idx
-        CURRENT_DATASET["raw_df"] = raw_df
-        CURRENT_DATASET["clean_df"] = clean_df
-        CURRENT_DATASET["metadata"] = metadata
-
-        logger.info(f"[CSV] 정밀 진단 완료: {file.filename} (상품군: {metadata['categories']['total_count']}개, 운영형태: {len(metadata['operations']['analyzable_list'])}개, 시점: {metadata['periods']['total_count']}개)")
-
-        return jsonify({
-            "status": "success",
-            "file_info": {
-                "file_name": file.filename,
-                "file_size_bytes": file_size,
-                "file_size_formatted": f"{round(file_size / 1024, 2)} KB"
-            },
-            "encoding_info": {
-                "detected_encoding": used_encoding,
-                "skipped_rows": header_row_idx
-            },
-            "dimension_info": {
-                "raw_rows": metadata["summary"]["total_raw_rows"],
-                "clean_rows": metadata["summary"]["total_clean_rows"],
-                "columns_count": len(raw_df.columns)
-            },
-            "detected_columns": metadata["detected_columns"],
-            "operation_types": metadata["operations"],
-            "categories": metadata["categories"],
-            "periods": metadata["periods"],
-            "recommended_period": metadata["periods"]["recommended"],
-            "missing_outliers_summary": {
-                "missing_count": metadata["summary"]["missing_count"],
-                "zero_count": metadata["summary"]["zero_count"],
-                "aggregate_rows_count": metadata["summary"]["aggregate_rows_count"]
-            },
-            "preview_rows": metadata["preview_rows"],
-            "warnings": metadata["warnings"],
-            "message": "KOSIS 데이터 진단이 성공적으로 완료되었습니다."
-        }), 200
-
+        diag_result = _process_and_store_dataset(file_bytes, file.filename, file_size)
+        return jsonify(diag_result), 200
     except Exception as e:
         logger.error(f"[ERROR] CSV 정밀 진단 실패: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"CSV 파일 진단 중 오류가 발생했습니다: {str(e)}"}), 500
+
+@app.route("/api/raw-files", methods=["GET"])
+def get_raw_files():
+    """신규 추가: raw_data/ 폴더 내 분석 가능한 CSV 원본 파일 목록 반환"""
+    try:
+        files = []
+        if os.path.exists(RAW_DATA_DIR):
+            for fname in sorted(os.listdir(RAW_DATA_DIR)):
+                if fname.lower().endswith(".csv"):
+                    fpath = os.path.join(RAW_DATA_DIR, fname)
+                    stat = os.stat(fpath)
+                    files.append({
+                        "name": fname,
+                        "size_bytes": stat.st_size,
+                        "size_formatted": f"{round(stat.st_size / 1024, 2)} KB",
+                        "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
+                    })
+        return jsonify({
+            "status": "success",
+            "folder": "raw_data",
+            "files": files,
+            "count": len(files)
+        }), 200
+    except Exception as e:
+        logger.error(f"[ERROR] raw_data 목록 조회 실패: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/inspect-from-folder", methods=["POST"])
+def inspect_from_folder():
+    """신규 추가: raw_data/ 폴더에 위치한 CSV 원본 파일을 직접 열어 즉시 진단 수행"""
+    req_data = request.get_json(silent=True) or {}
+    file_name = str(req_data.get("file_name", "")).strip()
+
+    if not file_name:
+        csv_files = [f for f in os.listdir(RAW_DATA_DIR) if f.lower().endswith(".csv")]
+        if not csv_files:
+            return jsonify({
+                "status": "error",
+                "message": "raw_data 폴더에 CSV 파일이 없습니다. 먼저 raw_data 폴더에 CSV 파일을 넣어주세요."
+            }), 404
+        csv_files.sort(key=lambda f: os.path.getmtime(os.path.join(RAW_DATA_DIR, f)), reverse=True)
+        file_name = csv_files[0]
+
+    safe_name = os.path.basename(file_name)
+    file_path = os.path.join(RAW_DATA_DIR, safe_name)
+
+    if not os.path.isfile(file_path):
+        return jsonify({
+            "status": "error",
+            "message": f"지정된 파일을 찾을 수 없습니다: raw_data/{safe_name}"
+        }), 404
+
+    try:
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+
+        file_size = len(file_bytes)
+        if file_size == 0:
+            return jsonify({
+                "status": "error",
+                "message": f"raw_data/{safe_name} 파일 내용이 비어있습니다."
+            }), 400
+
+        diag_result = _process_and_store_dataset(file_bytes, f"raw_data/{safe_name}", file_size)
+        return jsonify(diag_result), 200
+    except Exception as e:
+        logger.error(f"[ERROR] raw_data/{safe_name} 진단 실패: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"raw_data/{safe_name} 진단 중 오류 발생: {str(e)}"}), 500
 
 @app.route("/suggest", methods=["POST"])
 def suggest_tools():
