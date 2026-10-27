@@ -88,12 +88,50 @@
                 <div class="card-header">
                     <div>
                         <span class="step-num">Step 2</span>
-                        <h2>분석 대상 상품 선택</h2>
+                        <h2>분석 대상 상품 및 기간 선택</h2>
                     </div>
                     <span class="category-pill-count" id="categoryCountBadge">총 0개 상품군</span>
                 </div>
                 <div class="card-body">
-                    <p class="guide-text">분석하고 싶은 상품군(품목)의 타원 버튼을 클릭하세요. 클릭 즉시 해당 상품의 채널별 거래액 추이와 점유율 행태 분석이 자동으로 실행됩니다.</p>
+                    <p class="guide-text">분석하고 싶은 <strong>기간</strong>을 선택하고 <strong>상품군(품목) 타원 버튼</strong>을 클릭하세요. 선택한 기간 동안의 온라인몰 vs 병행몰 거래액 추이와 점유율 행태 분석이 즉시 실행됩니다.</p>
+
+                    <!-- 기간 선택 패널 (프리셋 + 직접 시점 선택) -->
+                    <div class="step2-period-panel">
+                        <div class="step2-period-top">
+                            <div class="period-title-group">
+                                <span class="period-panel-badge">📅 분석 기간</span>
+                                <span class="period-summary-text" id="step2PeriodSummaryText">기간 로딩 중...</span>
+                            </div>
+                            <div class="period-preset-pills" id="step2PeriodPresets">
+                                <button type="button" class="preset-pill" data-preset="all">⚡ 전체 기간</button>
+                                <button type="button" class="preset-pill" data-preset="5y">📅 최근 5년</button>
+                                <button type="button" class="preset-pill active" data-preset="3y">📅 최근 3년</button>
+                                <button type="button" class="preset-pill" data-preset="1y">📅 최근 1년</button>
+                            </div>
+                        </div>
+                        <div class="step2-period-bottom">
+                            <div class="period-range-selects">
+                                <div class="period-select-field">
+                                    <label for="step2StartPeriod">시작 시점</label>
+                                    <select id="step2StartPeriod" class="form-select period-select"></select>
+                                </div>
+                                <span class="range-arrow">~</span>
+                                <div class="period-select-field">
+                                    <label for="step2EndPeriod">종료 시점</label>
+                                    <select id="step2EndPeriod" class="form-select period-select"></select>
+                                </div>
+                            </div>
+                            <button type="button" class="btn-period-apply" id="step2ApplyPeriodBtn">
+                                <span>🔄 선택 기간으로 분석 갱신</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 상품군 타원 버튼 헤더 -->
+                    <div class="step2-pills-header">
+                        <span class="pills-title">🛍️ 품목 원클릭 분석</span>
+                        <span class="pills-subtext">타원 버튼을 누르면 위 기간의 온라인몰 vs 병행몰 추이가 즉각 분석됩니다</span>
+                    </div>
 
                     <!-- 타원형 상품 버튼 목록 -->
                     <div class="category-pills-grid" id="categoryPillsGrid"></div>

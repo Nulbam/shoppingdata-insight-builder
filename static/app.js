@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentFile = null;
     let inspectionMeta = null;
     let currentChart = null;
+    let currentActiveCategory = "";
 
     // DOM 요소 캐싱
     const statusDot = document.getElementById("statusDot");
@@ -23,9 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedFileName = document.getElementById("selectedFileName");
     const inspectBtn = document.getElementById("inspectBtn");
 
-    // Step 2 요소 (분석 대상 상품 선택 및 진단 아코디언)
+    // Step 2 요소 (기간별 선택, 분석 대상 상품 타원 버튼, 진단 아코디언)
     const diagnosisSection = document.getElementById("diagnosisSection");
     const categoryCountBadge = document.getElementById("categoryCountBadge");
+    const step2PeriodSummaryText = document.getElementById("step2PeriodSummaryText");
+    const step2PeriodPresets = document.getElementById("step2PeriodPresets");
+    const step2StartPeriod = document.getElementById("step2StartPeriod");
+    const step2EndPeriod = document.getElementById("step2EndPeriod");
+    const step2ApplyPeriodBtn = document.getElementById("step2ApplyPeriodBtn");
     const categoryPillsGrid = document.getElementById("categoryPillsGrid");
     const toggleDiagMetaBtn = document.getElementById("toggleDiagMetaBtn");
     const diagMetaContent = document.getElementById("diagMetaContent");
@@ -306,6 +312,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderCategoryPills(categories, activeCat) {
         if (!categoryPillsGrid) return;
         categoryPillsGrid.innerHTML = "";
+        currentActiveCategory = activeCat;
 
         categories.forEach(cat => {
             const btn = document.createElement("button");
@@ -325,9 +332,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function selectAndAnalyzeCategory(categoryName) {
+        currentActiveCategory = categoryName;
+
         // 1. 타원 버튼 활성화 상태 갱신
-        const allPills = categoryPillsGrid.querySelectorAll(".category-pill");
-        allPills.forEach(p => p.classList.toggle("active", p.dataset.category === categoryName));
+        if (categoryPillsGrid) {
+            const allPills = categoryPillsGrid.querySelectorAll(".category-pill");
+            allPills.forEach(p => p.classList.toggle("active", p.dataset.category === categoryName));
+        }
 
         // 2. Step 3 드롭다운 동기화
         if (categorySelect) {
@@ -349,18 +360,77 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         updateParamVisibility();
 
+        // Step 2의 기간 선택값 우선 사용
+        const startVal = (step2StartPeriod && step2StartPeriod.value) ? step2StartPeriod.value : (startPeriodSelect ? startPeriodSelect.value : "");
+        const endVal = (step2EndPeriod && step2EndPeriod.value) ? step2EndPeriod.value : (endPeriodSelect ? endPeriodSelect.value : "");
+
         const params = {
             category: categoryName,
             reference_period: periodSelect ? periodSelect.value : "",
-            start_period: startPeriodSelect ? startPeriodSelect.value : "",
-            end_period: endPeriodSelect ? endPeriodSelect.value : "",
-            base_period: startPeriodSelect ? startPeriodSelect.value : "",
-            target_period: endPeriodSelect ? endPeriodSelect.value : "",
+            start_period: startVal,
+            end_period: endVal,
+            base_period: startVal,
+            target_period: endVal,
             exclude_aggregates: true
         };
 
-        console.log(`[CATEGORY-PILL] 타원 버튼 클릭: '${categoryName}' -> '${targetTool}' 분석 즉시 실행`);
+        console.log(`[CATEGORY-PILL] 타원 버튼 클릭: '${categoryName}' (기간: ${startVal} ~ ${endVal}) -> '${targetTool}' 분석 즉시 실행`);
         executeAnalysis(targetTool, params);
+    }
+
+    function updateStep2PeriodSummary() {
+        if (!step2PeriodSummaryText || !step2StartPeriod || !step2EndPeriod || !inspectionMeta) return;
+        const startVal = step2StartPeriod.value;
+        const endVal = step2EndPeriod.value;
+        const periods = (inspectionMeta.periods && inspectionMeta.periods.all_list) ? inspectionMeta.periods.all_list : [];
+        const startIdx = periods.indexOf(startVal);
+        const endIdx = periods.indexOf(endVal);
+
+        let countText = "";
+        if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
+            const months = (endIdx - startIdx) + 1;
+            countText = ` (총 ${months}개월)`;
+        }
+        step2PeriodSummaryText.textContent = `${startVal} ~ ${endVal}${countText}`;
+    }
+
+    function applyPresetPeriod(presetKey, shouldTriggerAnalysis = true) {
+        if (!inspectionMeta || !inspectionMeta.periods || !inspectionMeta.periods.all_list) return;
+        const periods = inspectionMeta.periods.all_list;
+        if (periods.length === 0) return;
+
+        const lastIdx = periods.length - 1;
+        let startIdx = 0;
+
+        if (presetKey === "all") {
+            startIdx = 0;
+        } else if (presetKey === "5y") {
+            startIdx = Math.max(0, periods.length - 60);
+        } else if (presetKey === "3y") {
+            startIdx = Math.max(0, periods.length - 36);
+        } else if (presetKey === "1y") {
+            startIdx = Math.max(0, periods.length - 12);
+        }
+
+        const startP = periods[startIdx];
+        const endP = periods[lastIdx];
+
+        if (step2StartPeriod) step2StartPeriod.value = startP;
+        if (step2EndPeriod) step2EndPeriod.value = endP;
+        if (startPeriodSelect) startPeriodSelect.value = startP;
+        if (endPeriodSelect) endPeriodSelect.value = endP;
+
+        // 프리셋 버튼 active 토글
+        if (step2PeriodPresets) {
+            const pills = step2PeriodPresets.querySelectorAll(".preset-pill");
+            pills.forEach(p => p.classList.toggle("active", p.dataset.preset === presetKey));
+        }
+
+        updateStep2PeriodSummary();
+
+        if (shouldTriggerAnalysis && currentActiveCategory) {
+            selectAndAnalyzeCategory(currentActiveCategory);
+        }
     }
 
     function renderInspectionResults(data) {
@@ -433,15 +503,18 @@ document.addEventListener("DOMContentLoaded", () => {
             periodSelect.appendChild(opt);
         });
 
-        // 2. 기간 범위 (시작 / 종료 시점)
+        // 2. 기간 범위 (시작 / 종료 시점) - Step 2 및 Step 3
         startPeriodSelect.innerHTML = "";
         endPeriodSelect.innerHTML = "";
 
-        // 시작 시점 기본값: 최근 24개월 전 또는 첫 번째 시점
-        const defaultStartIdx = periods.length >= 24 ? periods.length - 24 : 0;
+        if (step2StartPeriod) step2StartPeriod.innerHTML = "";
+        if (step2EndPeriod) step2EndPeriod.innerHTML = "";
+
+        // 시작 시점 기본값: 최근 36개월 전(3년) 또는 첫 번째 시점
+        const defaultStartIdx = periods.length >= 36 ? periods.length - 36 : 0;
         const defaultStart = periods[defaultStartIdx];
 
-        periods.forEach((p, idx) => {
+        periods.forEach((p) => {
             const optStart = document.createElement("option");
             optStart.value = p;
             optStart.textContent = p;
@@ -453,7 +526,26 @@ document.addEventListener("DOMContentLoaded", () => {
             optEnd.textContent = p;
             if (p === rec) optEnd.selected = true;
             endPeriodSelect.appendChild(optEnd);
+
+            if (step2StartPeriod) {
+                const s2OptStart = document.createElement("option");
+                s2OptStart.value = p;
+                s2OptStart.textContent = p;
+                if (p === defaultStart) s2OptStart.selected = true;
+                step2StartPeriod.appendChild(s2OptStart);
+            }
+
+            if (step2EndPeriod) {
+                const s2OptEnd = document.createElement("option");
+                s2OptEnd.value = p;
+                s2OptEnd.textContent = p;
+                if (p === rec) s2OptEnd.selected = true;
+                step2EndPeriod.appendChild(s2OptEnd);
+            }
         });
+
+        // Step 2 기간 요약 표시 및 프리셋 기본 active('3y')
+        applyPresetPeriod("3y", false);
 
         // 3. 상품군
         categorySelect.innerHTML = "";
@@ -465,6 +557,71 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         updateParamVisibility();
+    }
+
+    // Step 2 프리셋 버튼 클릭 리스너 등록
+    if (step2PeriodPresets) {
+        const presetBtns = step2PeriodPresets.querySelectorAll(".preset-pill");
+        presetBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                const preset = btn.dataset.preset;
+                applyPresetPeriod(preset, true);
+            });
+        });
+    }
+
+    // Step 2 직접 시점 선택 변경 리스너
+    if (step2StartPeriod) {
+        step2StartPeriod.addEventListener("change", () => {
+            if (startPeriodSelect) startPeriodSelect.value = step2StartPeriod.value;
+            if (step2PeriodPresets) {
+                step2PeriodPresets.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
+            }
+            updateStep2PeriodSummary();
+        });
+    }
+
+    if (step2EndPeriod) {
+        step2EndPeriod.addEventListener("change", () => {
+            if (endPeriodSelect) endPeriodSelect.value = step2EndPeriod.value;
+            if (step2PeriodPresets) {
+                step2PeriodPresets.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
+            }
+            updateStep2PeriodSummary();
+        });
+    }
+
+    // Step 2 [선택 기간으로 분석 갱신] 버튼
+    if (step2ApplyPeriodBtn) {
+        step2ApplyPeriodBtn.addEventListener("click", () => {
+            const cat = currentActiveCategory || (inspectionMeta && inspectionMeta.categories.analyzable_list[0]) || "";
+            if (cat) {
+                selectAndAnalyzeCategory(cat);
+            } else {
+                alert("분석할 상품군을 선택해주세요.");
+            }
+        });
+    }
+
+    // Step 3 시작/종료 시점 변경 시 Step 2 역방향 동기화
+    if (startPeriodSelect) {
+        startPeriodSelect.addEventListener("change", () => {
+            if (step2StartPeriod) step2StartPeriod.value = startPeriodSelect.value;
+            if (step2PeriodPresets) {
+                step2PeriodPresets.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
+            }
+            updateStep2PeriodSummary();
+        });
+    }
+
+    if (endPeriodSelect) {
+        endPeriodSelect.addEventListener("change", () => {
+            if (step2EndPeriod) step2EndPeriod.value = endPeriodSelect.value;
+            if (step2PeriodPresets) {
+                step2PeriodPresets.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
+            }
+            updateStep2PeriodSummary();
+        });
     }
 
     function updateParamVisibility() {

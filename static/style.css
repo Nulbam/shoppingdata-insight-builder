@@ -528,7 +528,7 @@ body {
 }
 
 /* ==========================================================================
-   Step 2: 분석 대상 상품 타원 버튼 (Category Pills)
+   Step 2: 기간별 선택 및 분석 대상 상품 타원 버튼
    ========================================================================== */
 .category-pill-count {
     font-size: 0.85rem;
@@ -540,11 +540,170 @@ body {
     border: 1px solid #bfdbfe;
 }
 
+/* Step 2 기간 선택 패널 */
+.step2-period-panel {
+    background-color: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    margin: 16px 0 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.step2-period-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed #cbd5e1;
+}
+
+.period-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.period-panel-badge {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #1e40af;
+    background-color: #dbeafe;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    border: 1px solid #bfdbfe;
+}
+
+.period-summary-text {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #334155;
+}
+
+.period-preset-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.preset-pill {
+    padding: 6px 14px;
+    border-radius: 9999px;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.preset-pill:hover {
+    border-color: var(--primary);
+    background-color: var(--primary-light);
+    color: var(--primary);
+}
+
+.preset-pill.active {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.step2-period-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.period-range-selects {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.period-select-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.period-select-field label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.period-select {
+    padding: 7px 12px;
+    font-size: 0.88rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: var(--text-main);
+    font-weight: 600;
+    min-width: 130px;
+}
+
+.range-arrow {
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.btn-period-apply {
+    padding: 7px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--primary);
+    background-color: #ffffff;
+    color: var(--primary);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-period-apply:hover {
+    background-color: var(--primary);
+    color: #ffffff;
+}
+
+.step2-pills-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pills-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.pills-subtext {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
 .category-pills-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin: 16px 0 18px 0;
+    margin: 12px 0 16px 0;
 }
 
 .category-pill {
