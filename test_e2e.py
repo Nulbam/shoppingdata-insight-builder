@@ -12,12 +12,26 @@ health_data = res_health.get_json()
 print("Health OK:", health_data)
 
 print("\n=== [E2E STEP 2] CSV Upload & Inspection (/inspect) ===")
-with open("data/kosis_online_shopping_sample.csv", "rb") as f:
+import os
+
+target_csv_file = None
+for search_dir in ["raw_data", "data"]:
+    if os.path.exists(search_dir):
+        csv_candidates = [f for f in os.listdir(search_dir) if f.lower().endswith(".csv")]
+        if csv_candidates:
+            target_csv_file = os.path.join(search_dir, csv_candidates[0])
+            break
+
+if not target_csv_file:
+    raise FileNotFoundError("테스트할 CSV 파일이 raw_data 또는 data 폴더에 없습니다.")
+
+print("Testing with CSV file:", target_csv_file)
+with open(target_csv_file, "rb") as f:
     csv_bytes = f.read()
 
 res_inspect = client.post(
     "/inspect",
-    data={"file": (io.BytesIO(csv_bytes), "kosis_online_shopping_sample.csv")},
+    data={"file": (io.BytesIO(csv_bytes), os.path.basename(target_csv_file))},
     content_type="multipart/form-data"
 )
 assert res_inspect.status_code == 200, f"Inspect failed: {res_inspect.status_code}"
